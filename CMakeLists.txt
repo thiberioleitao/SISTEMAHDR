@@ -14,6 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_PREFIX_PATH "C:/Qt/6.7.0/msvc2022_64")
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(Boost REQUIRED)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -45,3 +46,9 @@ target_include_directories(SISTEMAHDR PRIVATE
 target_link_libraries(SISTEMAHDR
     Qt6::Widgets
 )
+
+if (TARGET Boost::headers)
+    target_link_libraries(SISTEMAHDR PRIVATE Boost::headers)
+elseif(TARGET Boost::boost)
+    target_link_libraries(SISTEMAHDR PRIVATE Boost::boost)
+endif()

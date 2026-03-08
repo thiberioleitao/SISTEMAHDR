@@ -1,7 +1,11 @@
 #include "CalculoHidraulicoCanal.h"
 
+#include <boost/math/tools/roots.hpp>
+
 #include <algorithm>
+#include <cstdint>
 #include <cmath>
+#include <limits>
 
 double CalculoHidraulicoCanal::velocidadeManning(const SecaoTransversalTrapezoidal& secao,
                                                  double alturaLamina,
@@ -40,4 +44,58 @@ double CalculoHidraulicoCanal::vazaoProjeto(const SecaoTransversalTrapezoidal& s
                         alturaLaminaProjeto,
                         declividadeFundo,
                         coeficienteManning);
+}
+
+double CalculoHidraulicoCanal::laminaParaVazao(const SecaoTransversalTrapezoidal& secao,
+                                               double vazaoDesejada,
+                                               double declividadeFundo,
+                                               double coeficienteManning,
+                                               double tolerancia,
+                                               int maxIteracoes,
+                                               double alturaMaximaBusca)
+{
+    if (vazaoDesejada <= 0.0) return 0.0;
+    if (declividadeFundo <= 0.0 || coeficienteManning <= 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double tol = std::max(1e-12, tolerancia);
+    const int maxIt = std::max(1, maxIteracoes);
+
+    double yMin = 0.0;
+    double yMax = std::max(1e-6, alturaMaximaBusca);
+
+    const auto f = [&](double y) {
+        return vazaoManning(secao, y, declividadeFundo, coeficienteManning) - vazaoDesejada;
+    };
+
+    double fMin = f(yMin);
+    double fMax = f(yMax);
+
+    int expansoes = 0;
+    while (fMin * fMax > 0.0 && expansoes < maxIt) {
+        yMax *= 2.0;
+        fMax = f(yMax);
+        ++expansoes;
+    }
+
+    if (fMin * fMax > 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    auto criterioParada = [tol](double a, double b) {
+        return std::abs(b - a) <= tol;
+    };
+
+    std::uintmax_t it = static_cast<std::uintmax_t>(maxIt);
+    const auto raiz = boost::math::tools::toms748_solve(
+        f,
+        yMin,
+        yMax,
+        fMin,
+        fMax,
+        criterioParada,
+        it);
+
+    return 0.5 * (raiz.first + raiz.second);
 }
