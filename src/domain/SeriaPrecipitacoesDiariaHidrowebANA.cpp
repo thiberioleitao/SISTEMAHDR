@@ -26,7 +26,7 @@ bool SeriaPrecipitacoesDiariaHidrowebANA::contem(const QDate& dia) const
     return m_pxPorDia.contains(dia); // existe chave?
 }
 
-double SeriaPrecipitacoesDiariaHidrowebANA::px(const QDate& dia) const
+double SeriaPrecipitacoesDiariaHidrowebANA::Pdia(const QDate& dia) const
 {
     return m_pxPorDia.value(dia, nan());  // se não existe, NaN
 }

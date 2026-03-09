@@ -1,15 +1,13 @@
 #include "MainWindow.h"
 
-#include <QLabel>
+#include "CanalTrapezoidalWidget.h"
 
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle("SISTEMAHDR - Hello Qt");
+    setWindowTitle("SISTEMAHDR - Canal Trapezoidal");
 
-    auto* lbl = new QLabel("Hello World - Qt + CMake + Visual Studio", this);
-    lbl->setAlignment(Qt::AlignCenter);
-
-    setCentralWidget(lbl);
-    resize(500, 300);
+    m_widgetCanalTrapezoidal = new CanalTrapezoidalWidget(this);
+    setCentralWidget(m_widgetCanalTrapezoidal);
+    resize(980, 520);
 }

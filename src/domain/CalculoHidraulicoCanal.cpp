@@ -1,9 +1,6 @@
 #include "CalculoHidraulicoCanal.h"
 
-#include <boost/math/tools/roots.hpp>
-
 #include <algorithm>
-#include <cstdint>
 #include <cmath>
 #include <limits>
 
@@ -61,41 +58,62 @@ double CalculoHidraulicoCanal::laminaParaVazao(const SecaoTransversalTrapezoidal
 
     const double tol = std::max(1e-12, tolerancia);
     const int maxIt = std::max(1, maxIteracoes);
-
-    double yMin = 0.0;
-    double yMax = std::max(1e-6, alturaMaximaBusca);
+    const double yMaxFisico = std::max(1e-6, alturaMaximaBusca);
 
     const auto f = [&](double y) {
         return vazaoManning(secao, y, declividadeFundo, coeficienteManning) - vazaoDesejada;
     };
 
+    // 1) Newton-Raphson (derivada numérica central)
+    double y = 0.5 * yMaxFisico; // chute inicial interno
+    for (int i = 0; i < maxIt; ++i) {
+        const double fy = f(y);
+        if (std::abs(fy) <= tol) return y;
+
+        const double h = std::max(1e-8, 1e-6 * std::max(1.0, y));
+        const double yMenos = std::max(0.0, y - h);
+        const double yMais = std::min(yMaxFisico, y + h);
+        const double intervalo = yMais - yMenos;
+        if (intervalo <= 0.0) break;
+
+        const double dFy = (f(yMais) - f(yMenos)) / intervalo;
+        if (!std::isfinite(dFy) || std::abs(dFy) < 1e-14) break;
+
+        const double yNovo = y - (fy / dFy);
+        if (!std::isfinite(yNovo)) break;
+
+        y = std::clamp(yNovo, 0.0, yMaxFisico);
+    }
+
+    // 2) Fallback: bisseção no intervalo físico [0, yMaxFisico]
+    double yMin = 0.0;
+    double yMax = yMaxFisico;
+
     double fMin = f(yMin);
     double fMax = f(yMax);
 
-    int expansoes = 0;
-    while (fMin * fMax > 0.0 && expansoes < maxIt) {
-        yMax *= 2.0;
-        fMax = f(yMax);
-        ++expansoes;
-    }
-
     if (fMin * fMax > 0.0) {
+        // Sem raiz no domínio físico da seção: vazão exige lâmina acima da altura máxima.
         return std::numeric_limits<double>::quiet_NaN();
     }
 
-    auto criterioParada = [tol](double a, double b) {
-        return std::abs(b - a) <= tol;
-    };
+    for (int i = 0; i < maxIt; ++i) {
+        const double yMid = 0.5 * (yMin + yMax);
+        const double fMid = f(yMid);
 
-    std::uintmax_t it = static_cast<std::uintmax_t>(maxIt);
-    const auto raiz = boost::math::tools::toms748_solve(
-        f,
-        yMin,
-        yMax,
-        fMin,
-        fMax,
-        criterioParada,
-        it);
+        if (std::abs(fMid) <= tol || std::abs(yMax - yMin) <= tol) {
+            return yMid;
+        }
 
-    return 0.5 * (raiz.first + raiz.second);
+        if (fMin * fMid <= 0.0) {
+            yMax = yMid;
+            fMax = fMid;
+        }
+        else {
+            yMin = yMid;
+            fMin = fMid;
+        }
+    }
+
+    return 0.5 * (yMin + yMax);
 }

@@ -14,7 +14,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_PREFIX_PATH "C:/Qt/6.7.0/msvc2022_64")
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
-find_package(Boost REQUIRED)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
@@ -26,17 +25,27 @@ set(CMAKE_AUTORCC ON)
 add_executable(SISTEMAHDR
     src/main.cpp
     src/ui/MainWindow.cpp
+    src/ui/CanalTrapezoidalWidget.cpp
     src/domain/Canal.cpp
+    src/domain/BaciaContribuicao.cpp
+    src/domain/MetodoRacionalTransformacao.cpp
+    src/domain/RedeHidrologica.cpp
     src/domain/CanalTrecho.cpp
     src/domain/RevestimentoCanal.cpp
     src/domain/CalculoHidraulicoCanal.cpp
     src/domain/SeriaPrecipitacoesDiariaHidrowebANA.h
     src/domain/SeriaPrecipitacoesDiariaHidrowebANA.cpp
     src/domain/Canal.h
+    src/domain/BaciaContribuicao.h
+    src/domain/ModeloInfiltracao.h
+    src/domain/ModeloTransformacaoChuvaVazao.h
+    src/domain/MetodoRacionalTransformacao.h
+    src/domain/RedeHidrologica.h
     src/domain/CanalTrecho.h
     src/domain/SecaoTransversalTrapezoidal.h
     src/domain/RevestimentoCanal.h
     src/domain/CalculoHidraulicoCanal.h
+    src/ui/CanalTrapezoidalWidget.h
 )
 
 target_include_directories(SISTEMAHDR PRIVATE
@@ -46,9 +55,3 @@ target_include_directories(SISTEMAHDR PRIVATE
 target_link_libraries(SISTEMAHDR
     Qt6::Widgets
 )
-
-if (TARGET Boost::headers)
-    target_link_libraries(SISTEMAHDR PRIVATE Boost::headers)
-elseif(TARGET Boost::boost)
-    target_link_libraries(SISTEMAHDR PRIVATE Boost::boost)
-endif()
