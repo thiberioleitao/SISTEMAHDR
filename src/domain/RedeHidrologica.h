@@ -1,7 +1,10 @@
 #pragma once
 
+#include "BaciaContribuicao.h"
+
 #include <QMap>
 #include <QString>
+#include <QStringList>
 #include <QVector>
 
 struct ElementoRedeHidrologica
@@ -27,6 +30,15 @@ public:
                                              const QString& prefixo = "E",
                                              QString* erro = nullptr);
 
+    bool importarBaciasCsvCivil3D(const QString& caminhoArquivoCsv,
+                                  bool areaEmMetroQuadrado = true,
+                                  QString* erro = nullptr,
+                                  QStringList* avisos = nullptr);
+
+    const QVector<BaciaContribuicao>& bacias() const;
+
+    QMap<QString, double> contribuicaoBasePorElemento() const;
+
     const QVector<ElementoRedeHidrologica>& elementos() const;
 
     QMap<QString, double> calcularVazaoAcumuladaPorElemento(
@@ -37,4 +49,5 @@ public:
 
 private:
     QVector<ElementoRedeHidrologica> m_elementos;
+    QVector<BaciaContribuicao> m_bacias;
 };

@@ -5,6 +5,19 @@
 
 #include <algorithm>
 
+BaciaContribuicao::BaciaContribuicao(const QString& id,
+                                     const QString& idJusante,
+                                     double areaKm2,
+                                     double declividadeMedia,
+                                     double comprimentoTalveguePrincipalKm)
+    : m_id(id)
+    , m_idJusante(idJusante)
+    , m_areaKm2(std::max(0.0, areaKm2))
+    , m_declividadeMedia(std::max(0.0, declividadeMedia))
+    , m_comprimentoTalveguePrincipalKm(std::max(0.0, comprimentoTalveguePrincipalKm))
+{
+}
+
 BaciaContribuicao::BaciaContribuicao(double areaKm2,
                                      double declividadeMedia,
                                      double comprimentoTalveguePrincipalKm)
@@ -12,6 +25,31 @@ BaciaContribuicao::BaciaContribuicao(double areaKm2,
     , m_declividadeMedia(std::max(0.0, declividadeMedia))
     , m_comprimentoTalveguePrincipalKm(std::max(0.0, comprimentoTalveguePrincipalKm))
 {
+}
+
+const QString& BaciaContribuicao::id() const
+{
+    return m_id;
+}
+
+const QString& BaciaContribuicao::nome() const
+{
+    return m_nome;
+}
+
+void BaciaContribuicao::setNome(const QString& nome)
+{
+    m_nome = nome;
+}
+
+const QString& BaciaContribuicao::idJusante() const
+{
+    return m_idJusante;
+}
+
+void BaciaContribuicao::setIdJusante(const QString& idJusante)
+{
+    m_idJusante = idJusante;
 }
 
 double BaciaContribuicao::areaKm2() const
