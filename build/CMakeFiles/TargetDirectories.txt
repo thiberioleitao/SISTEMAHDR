@@ -1,0 +1,3 @@
+C:/Users/thib/.codex/worktrees/0abf/SISTEMAHDR/build/CMakeFiles/SISTEMAHDR.dir
+C:/Users/thib/.codex/worktrees/0abf/SISTEMAHDR/build/CMakeFiles/ALL_BUILD.dir
+C:/Users/thib/.codex/worktrees/0abf/SISTEMAHDR/build/CMakeFiles/ZERO_CHECK.dir
