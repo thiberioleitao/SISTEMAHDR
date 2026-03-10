@@ -1,0 +1,99 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\build\SISTEMAHDR_autogen\mocs_compilation_Debug.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\main.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\ui\MainWindow.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\ui\CanalTrapezoidalWidget.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\Canal.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\BaciaContribuicao.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\MetodoRacionalTransformacao.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\RedeHidrologica.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\CanalTrecho.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\RevestimentoCanal.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\CalculoHidraulicoCanal.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\SeriaPrecipitacoesDiariaHidrowebANA.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\build\SISTEMAHDR_autogen\mocs_compilation_Release.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\build\SISTEMAHDR_autogen\mocs_compilation_MinSizeRel.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\build\SISTEMAHDR_autogen\mocs_compilation_RelWithDebInfo.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\SeriaPrecipitacoesDiariaHidrowebANA.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\Canal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\BaciaContribuicao.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\ModeloInfiltracao.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\ModeloTransformacaoChuvaVazao.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\MetodoRacionalTransformacao.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\RedeHidrologica.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\CanalTrecho.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\SecaoTransversalTrapezoidal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\RevestimentoCanal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\domain\CalculoHidraulicoCanal.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\src\ui\CanalTrapezoidalWidget.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\thib\.codex\worktrees\0abf\SISTEMAHDR\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{625654CD-A310-3F16-A498-48C22AD55906}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{AD479AC1-E669-314D-A1FD-B76D1B966A61}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
