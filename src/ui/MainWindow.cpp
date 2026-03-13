@@ -132,11 +132,12 @@ void MainWindow::configurarMenuSuperior()
         submenuCriarComponente->addAction(acao);
     };
 
-    adicionarAcaoComponente("Gerenciador de Dados Pluviometricos");
-    adicionarAcaoComponente("Gerenciador de IDF");
-    adicionarAcaoComponente("Gerenciador de Geometria");
-    adicionarAcaoComponente("Gerenciador de Cenarios");
-    adicionarAcaoComponente("Gerenciador de Estudos Hidrologicos");
+    adicionarAcaoComponente("Dados Pluviometricos");
+    adicionarAcaoComponente("Analise e Cadastro de IDFs");
+    adicionarAcaoComponente("Hidrologia e Perdas");
+    adicionarAcaoComponente("Geometria e Topologia");
+    adicionarAcaoComponente("Estruturas Hidraulicas");
+    adicionarAcaoComponente("Resumos e Relatorios");
 
     auto* acaoFerramentas = new QAction("Catalogo de Ferramentas", this);
     connect(acaoFerramentas, &QAction::triggered, this, [this]() {
@@ -383,134 +384,389 @@ void MainWindow::popularArvoreRede()
     const QVector<ElementoApresentacao> elementos = {
         {
             "projeto_raiz",
-            "Projeto Exemplo - Rede urbana",
+            "Projeto Exemplo - Dimensionamento HDR",
             "Projeto",
-            "Visao geral do projeto, organizada por estudos, dados, geometria e cenarios.",
+            "Macroestrutura inspirada na planilha de dimensionamento, organizada por entradas, hidrologia, geometria, estruturas e resumos.",
             0.0,
             0.0,
             0.0,
             {
                 {"Tipo", "Projeto"},
-                {"Estrutura", "Hidrologia, Geometria, Cenarios"},
-                {"Sistema de unidades", "SI"},
-                {"Status", "Interface base pronta para integracao"}
+                {"Planilha base", "DIMENSIONAMENTO (V2026.03.12).xlsm"},
+                {"Estrutura", "Pluviometria, IDFs, hidrologia, geometria, estruturas e resumos"},
+                {"Sistema de unidades", "SI"}
             }
         },
         {
-            "hidrologia",
-            "Hidrologia",
-            "Grupo de estudo",
-            "Agrupa os dados e modelos hidrologicos do projeto.",
+            "pluviometria_idf",
+            "Pluviometria e IDFs",
+            "Macrocomponente",
+            "Entradas pluviometricas, isozonas, regressoes e analise de curvas IDF.",
             0.0,
             0.0,
             0.0,
             {
-                {"Tipo", "Grupo de estudo"},
-                {"Subgrupos", "Dados pluviometricos, IDF"},
-                {"Uso", "Entrada para chuva-vazao"}
+                {"Tipo", "Macrocomponente"},
+                {"Abas base", "P1dia, isozonas, regressoes, ANALISE IDFS, IDFS"},
+                {"Uso", "Definicao das chuvas de projeto"}
             }
         },
         {
-            "dados_pluviometricos",
-            "Dados pluviometricos",
-            "Macroitem",
-            "Agrupa series observadas, tormentas sinteticas e fontes de precipitacao.",
+            "chuvas_base",
+            "Chuvas base",
+            "Grupo de planilhas",
+            "Fontes basicas de precipitacao e periodos de retorno.",
             0.0,
             0.0,
             0.0,
             {
-                {"Categoria", "Dados pluviometricos"},
-                {"Subitens", "Series observadas, tormentas de projeto"},
-                {"Origem", "ANA / estudos locais"}
+                {"Tipo", "Grupo de planilhas"},
+                {"Abas", "P1dia, Taborga_1974, Isozonas_2016 e correlatas"}
             }
         },
         {
-            "serie_ana_3252005",
-            "Serie ANA 3252005",
-            "Serie pluviometrica",
-            "Serie historica principal utilizada para consistencia e analise de eventos observados.",
+            "aba_p1dia",
+            "P1dia",
+            "Planilha",
+            "Tabela base de precipitacao versus periodo de retorno e probabilidade anual de excedencia.",
             0.0,
             0.0,
             0.0,
             {
-                {"Tipo", "Serie pluviometrica"},
-                {"Estacao", "3252005"},
-                {"Periodo", "2002-2024"},
-                {"Resolucao", "Diaria"},
-                {"Fonte", "Hidroweb ANA"}
+                {"Tipo", "Planilha"},
+                {"Conteudo", "Periodo de retorno, AEP e precipitacao"},
+                {"Funcao", "Entrada primaria de chuva"}
             }
         },
         {
-            "chuva_projeto_10a",
-            "Chuva de projeto 10 anos",
-            "Evento sintetico",
-            "Evento de referencia para verificacoes preliminares de microdrenagem.",
+            "aba_taborga_1974",
+            "Taborga_1974",
+            "Planilha",
+            "Referencia historica de apoio para tratamento pluviometrico e regionalizacao.",
             0.0,
             0.0,
             0.0,
             {
-                {"Tipo", "Evento sintetico"},
-                {"TR", "10 anos"},
-                {"Duracao critica", "30 min"},
-                {"Metodo", "Chicago"}
+                {"Tipo", "Planilha"},
+                {"Categoria", "Referencia pluviometrica historica"}
             }
         },
         {
-            "idf",
-            "IDF",
-            "Macroitem",
-            "Agrupa curvas intensidade-duracao-frequencia disponiveis para o projeto.",
+            "aba_reg_iso_1974",
+            "Reg_Isozonas_1974",
+            "Planilha",
+            "Regressoes associadas ao conjunto de isozonas de 1974.",
             0.0,
             0.0,
             0.0,
             {
-                {"Categoria", "IDF"},
-                {"Subitens", "Curvas locais e ajustadas"},
-                {"Uso", "Geracao de chuvas de projeto"}
+                {"Tipo", "Planilha"},
+                {"Categoria", "Regressao de isozonas"}
             }
         },
         {
-            "idf_fortaleza",
-            "IDF Fortaleza",
-            "Curva IDF",
-            "Curva base para duracoes curtas aplicada aos cenarios urbanos do projeto.",
+            "aba_isozonas_2016",
+            "Isozonas_2016",
+            "Planilha",
+            "Base de isozonas atualizada para apoio a intensidade e precipitacao regional.",
             0.0,
             0.0,
             0.0,
             {
-                {"Tipo", "Curva IDF"},
-                {"Localidade", "Fortaleza"},
-                {"Faixa de duracao", "5 a 1440 min"},
-                {"Fonte", "Bibliografia local"}
+                {"Tipo", "Planilha"},
+                {"Categoria", "Isozonas"}
             }
         },
         {
-            "idf_regional",
-            "IDF Regional Ajustada",
-            "Curva IDF",
-            "Alternativa regional para comparacao de sensibilidade dos resultados.",
+            "aba_reg_iso_2016",
+            "Reg_Isozonas_2016",
+            "Planilha",
+            "Regressoes associadas ao conjunto de isozonas de 2016.",
             0.0,
             0.0,
             0.0,
             {
-                {"Tipo", "Curva IDF"},
-                {"Abrangencia", "Regional"},
-                {"Ajuste", "Gumbel"},
-                {"Observacao", "Usar para comparacao"}
+                {"Tipo", "Planilha"},
+                {"Categoria", "Regressao de isozonas"}
             }
         },
         {
-            "geometria",
-            "Geometria",
-            "Macroitem",
-            "Concentra a rede de drenagem e os elementos fisicos representados na cena central.",
+            "aba_regressao_1957",
+            "Regressao_,_1957",
+            "Planilha",
+            "Regressao historica complementar utilizada como referencia na construcao das entradas.",
             0.0,
             0.0,
             0.0,
             {
-                {"Categoria", "Geometria"},
-                {"Subgrupos", "Bacias, canais, estruturas"},
-                {"Visualizacao", "QGraphicsScene"}
+                {"Tipo", "Planilha"},
+                {"Categoria", "Base historica"}
+            }
+        },
+        {
+            "analise_idfs",
+            "Analise de IDFs",
+            "Grupo de planilhas",
+            "Planilhas voltadas para calibracao, analise e cadastro de curvas IDF.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Grupo de planilhas"},
+                {"Abas", "ANALISE IDFS e IDFS"}
+            }
+        },
+        {
+            "aba_analise_idfs",
+            "ANALISE IDFS",
+            "Planilha",
+            "Comparacao entre metodologias, isozonas e parametros K, m, c e n das IDFs.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Campos-chave", "Tempo de retorno, K, m, c, n, I(mm/h), Ptotal(mm)"},
+                {"Funcao", "Analise comparativa de IDFs"}
+            }
+        },
+        {
+            "aba_idfs",
+            "IDFS",
+            "Planilha",
+            "Cadastro consolidado das curvas IDF disponiveis para uso no dimensionamento.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Campos-chave", "ID-IDF, Nome, TR, K, m, c, n"},
+                {"Funcao", "Base de curvas para chuva de projeto"}
+            }
+        },
+        {
+            "hidrologia_perdas",
+            "Hidrologia e perdas",
+            "Macrocomponente",
+            "Modelos de chuva efetiva, coeficientes equivalentes e perda de solo.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Macrocomponente"},
+                {"Abas base", "SCS-CN, C_EQUIVALENTE, RUSLE, CURVAS"}
+            }
+        },
+        {
+            "aba_scs_cn_pefetiva",
+            "SCS-CN-P_EFETIVA",
+            "Planilha",
+            "Calculo da precipitacao efetiva pelo metodo SCS-CN.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Campos-chave", "Duracao, TR, Ptotal, Ia, CN, S, Pef"},
+                {"Funcao", "Chuva efetiva"}
+            }
+        },
+        {
+            "aba_c_equivalente",
+            "C_EQUIVALENTE",
+            "Planilha",
+            "Consolidacao de coeficientes de escoamento equivalentes.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Coeficientes equivalentes para metodo racional"}
+            }
+        },
+        {
+            "aba_scs_cn_c",
+            "SCS-CN-C",
+            "Planilha",
+            "Parametros hidrologicos auxiliares e coeficientes complementares do metodo SCS-CN.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Parametros complementares de infiltracao"}
+            }
+        },
+        {
+            "aba_rusle",
+            "RUSLE",
+            "Planilha",
+            "Estimativa de perda de solo associada as bacias.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Perda de solo e sedimentacao"}
+            }
+        },
+        {
+            "aba_curvas",
+            "CURVAS",
+            "Planilha",
+            "Curvas e referencias auxiliares para os metodos hidrologicos.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Apoio grafico e parametrizacao"}
+            }
+        },
+        {
+            "geometria_topologia",
+            "Geometria e topologia",
+            "Macrocomponente",
+            "Entrada e consolidacao dos elementos fisicos da rede, dados geometricos e topologia hidraulica.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Macrocomponente"},
+                {"Abas base", "NOMENCLATURA, BACIAS, CANAIS, BUEIROS e topologias"},
+                {"Visualizacao", "Explorador + cena central"}
+            }
+        },
+        {
+            "cadastros_geometria",
+            "Cadastros e tabelas de geometria",
+            "Grupo de planilhas",
+            "Bases auxiliares usadas na montagem e consistencia da geometria.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Grupo de planilhas"},
+                {"Abas", "NOMENCLATURA, REVESTIMENTO, SECOES, EDRH_TIPOS"}
+            }
+        },
+        {
+            "aba_nomenclatura",
+            "NOMENCLATURA",
+            "Planilha",
+            "Padroes de codificacao e nomenclatura dos elementos.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Padronizacao dos identificadores"}
+            }
+        },
+        {
+            "aba_revestimento",
+            "REVESTIMENTO",
+            "Planilha",
+            "Biblioteca de revestimentos e parametros hidraulicos associados.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Materiais e rugosidade"}
+            }
+        },
+        {
+            "aba_secoes_preliminar",
+            "SECOES_PRELIMINAR",
+            "Planilha",
+            "Definicao preliminar de secoes para canais e dispositivos.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Pre-dimensionamento geometrico"}
+            }
+        },
+        {
+            "aba_secoes_dados",
+            "SECOES_DADOS",
+            "Planilha",
+            "Cadastro detalhado das secoes efetivamente utilizadas no projeto.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Base geometrica consolidada"}
+            }
+        },
+        {
+            "aba_edrh_tipos",
+            "EDRH_TIPOS",
+            "Planilha",
+            "Tipos padronizados de elementos de drenagem/hidraulica.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Tipologias de EDRH"}
+            }
+        },
+        {
+            "topologia_rede",
+            "Topologia da rede",
+            "Grupo de planilhas",
+            "Relacionamentos montante-jusante e dados principais das bacias e dispositivos.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Grupo de planilhas"},
+                {"Abas", "BACIAS-TOPOLOGIA E DADOS, DISPOSITIVOS-TOPOLOGIA E DADOS"}
+            }
+        },
+        {
+            "aba_bacias_topologia",
+            "BACIAS-TOPOLOGIA E DADOS",
+            "Planilha",
+            "Topologia das bacias com dados de area, talvegue, declividade e vazao.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Campos-chave", "ID-SUBBACIA, ID-JUSANTE, A, L_talvegue, S, n_Manning"},
+                {"Funcao", "Base hidrologica das bacias"}
+            }
+        },
+        {
+            "aba_dispositivos_topologia",
+            "DISPOSITIVOS-TOPOLOGIA E DADOS",
+            "Planilha",
+            "Topologia dos dispositivos, conexoes e ordens hidrologicas.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Campos-chave", "ID-MONTANTE, ID-JUSANTE, IDS-MONTANTE, ORDEM_HIDROLOGICA"},
+                {"Funcao", "Base de conexao da rede"}
+            }
+        },
+        {
+            "rede_drenagem",
+            "Rede de drenagem",
+            "Grupo visual",
+            "Representacao da rede de drenagem na interface grafica, derivada da macroestrutura da planilha.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Grupo visual"},
+                {"Conteudo", "Bacias, canais, bueiros e estruturas"}
             }
         },
         {
@@ -523,7 +779,7 @@ void MainWindow::popularArvoreRede()
             0.0,
             {
                 {"Tipo", "Grupo geometrico"},
-                {"Elementos", "2"},
+                {"Planilha origem", "BACIAS e BACIAS-TOPOLOGIA E DADOS"},
                 {"Representacao", "Poligonos na cena"}
             }
         },
@@ -537,8 +793,8 @@ void MainWindow::popularArvoreRede()
             1.0,
             {
                 {"Tipo", "Bacia de contribuicao"},
+                {"Planilha origem", "BACIAS"},
                 {"Area", "2,84 km2"},
-                {"CN equivalente", "78"},
                 {"Tempo de concentracao", "34 min"},
                 {"Elemento jusante", "Canal Principal"}
             }
@@ -553,9 +809,9 @@ void MainWindow::popularArvoreRede()
             1.2,
             {
                 {"Tipo", "Sub-bacia"},
+                {"Planilha origem", "BACIAS"},
                 {"Area", "1,37 km2"},
                 {"Declividade media", "4,1 %"},
-                {"Tempo de concentracao", "22 min"},
                 {"Elemento jusante", "Juncao J-02"}
             }
         },
@@ -569,7 +825,7 @@ void MainWindow::popularArvoreRede()
             0.0,
             {
                 {"Tipo", "Grupo geometrico"},
-                {"Elementos", "2"},
+                {"Planilha origem", "CANAIS"},
                 {"Representacao", "Eixo e blocos na cena"}
             }
         },
@@ -583,11 +839,10 @@ void MainWindow::popularArvoreRede()
             1.0,
             {
                 {"Tipo", "Canal trapezoidal"},
+                {"Planilha origem", "CANAIS"},
                 {"Comprimento", "185 m"},
                 {"Largura de fundo", "4,00 m"},
                 {"Altura de projeto", "2,00 m"},
-                {"Talude lateral", "1,0 H:1,0 V"},
-                {"Revestimento", "Concreto"},
                 {"Declividade", "0,0010 m/m"}
             }
         },
@@ -601,17 +856,29 @@ void MainWindow::popularArvoreRede()
             1.4,
             {
                 {"Tipo", "Trecho de canal"},
+                {"Planilha origem", "CANAIS"},
                 {"Comprimento", "240 m"},
                 {"Largura de fundo", "5,50 m"},
-                {"Altura de projeto", "2,40 m"},
-                {"Talude lateral", "1,4 H:1,0 V"},
-                {"Revestimento", "Solo compactado"},
-                {"Declividade", "0,0008 m/m"}
+                {"Altura de projeto", "2,40 m"}
+            }
+        },
+        {
+            "grupo_bueiros",
+            "Bueiros",
+            "Grupo geometrico",
+            "Subgrupo com os dispositivos tubulares associados a planilha de bueiros.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Grupo geometrico"},
+                {"Planilha origem", "BUEIROS"},
+                {"Representacao", "Dispositivos lineares e especiais"}
             }
         },
         {
             "grupo_estruturas",
-            "Estruturas de controle",
+            "Estruturas especiais",
             "Grupo geometrico",
             "Subgrupo de dispositivos especiais conectados a rede principal.",
             0.0,
@@ -619,7 +886,7 @@ void MainWindow::popularArvoreRede()
             0.0,
             {
                 {"Tipo", "Grupo geometrico"},
-                {"Elementos", "1"},
+                {"Planilhas origem", "DISPOSITIVOS-TOPOLOGIA E DADOS e estruturas"},
                 {"Representacao", "Elemento especial na descarga"}
             }
         },
@@ -633,39 +900,248 @@ void MainWindow::popularArvoreRede()
             0.8,
             {
                 {"Tipo", "Estrutura de controle"},
+                {"Planilha origem", "DISS_RESSALTO / DISPOSITIVOS-TOPOLOGIA E DADOS"},
                 {"Cota de soleira", "102,35 m"},
                 {"Largura util", "2,80 m"},
-                {"Altura", "1,50 m"},
-                {"Condicao", "Descarga livre"},
-                {"Observacao", "Verificar dissipacao a jusante"}
+                {"Condicao", "Descarga livre"}
             }
         },
         {
-            "cenarios",
-            "Cenarios de projeto",
-            "Macroitem",
-            "Area reservada para agrupar alternativas de simulacao e comparacao de premissas.",
+            "estruturas_hidraulicas",
+            "Estruturas hidraulicas",
+            "Macrocomponente",
+            "Dimensionamento de bueiros, dissipadores, reservatorios e dispositivos especiais.",
             0.0,
             0.0,
             0.0,
             {
-                {"Categoria", "Cenarios"},
-                {"Subitens", "Preliminar, executivo"},
-                {"Status", "Estrutura inicial"}
+                {"Tipo", "Macrocomponente"},
+                {"Abas base", "BUEIROS, DISSIPADORES, RESERVATORIOS e auxiliares"}
             }
         },
         {
-            "cenario_preliminar",
-            "Cenario preliminar",
-            "Cenario",
-            "Configuracao base usada para organizar os dados atuais da interface.",
+            "aba_bueiros",
+            "BUEIROS",
+            "Planilha",
+            "Dimensionamento e conferencia dos bueiros a partir da topologia e da vazao total.",
             0.0,
             0.0,
             0.0,
             {
-                {"Tipo", "Cenario"},
-                {"Descricao", "Base de trabalho inicial"},
-                {"Rede ativa", "Geometria principal"}
+                {"Tipo", "Planilha"},
+                {"Campos-chave", "ID-BUEIRO, Qp_total, A_total, L_talvegue_total, Cmed, Tc"},
+                {"Funcao", "Dimensionamento de bueiros"}
+            }
+        },
+        {
+            "aba_tubulares",
+            "TUBULAR_ADIMENSIONAIS",
+            "Planilha",
+            "Tabelas auxiliares adimensionais para dispositivos tubulares.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Consulta de parametros tubulares"}
+            }
+        },
+        {
+            "aba_espacamento",
+            "ESPACAMENTO_DISPOSITIVOS",
+            "Planilha",
+            "Apoio a distribuicao e espacamento de dispositivos na rede.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Regras de espacamento"}
+            }
+        },
+        {
+            "aba_res_det",
+            "RES_DET.",
+            "Planilha",
+            "Dimensionamento de reservatorios de detencao.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Reservatorio de detencao"}
+            }
+        },
+        {
+            "aba_res_sed",
+            "RES_SED.",
+            "Planilha",
+            "Dimensionamento de reservatorios de retencao/sedimentacao.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Retencao e sedimentacao"}
+            }
+        },
+        {
+            "aba_diss_ressalto",
+            "DISS_RESSALTO",
+            "Planilha",
+            "Dimensionamento de dissipadores por ressalto hidraulico.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Dissipacao por ressalto"}
+            }
+        },
+        {
+            "aba_diss_tapete",
+            "DISS_TAPETE_ENROCAMENTO",
+            "Planilha",
+            "Dimensionamento de dissipadores com tapete de enrocamento.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Dissipacao com enrocamento"}
+            }
+        },
+        {
+            "aba_diss_bacia",
+            "DISS_BACIA_ENROCAMENTO",
+            "Planilha",
+            "Dimensionamento de bacia dissipadora com enrocamento.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Bacia dissipadora"}
+            }
+        },
+        {
+            "resumos_relatorios",
+            "Resumos e relatorios",
+            "Macrocomponente",
+            "Consolidacao dos resultados globais e resumos por tipo de elemento.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Macrocomponente"},
+                {"Abas base", "RESUMO_GLOBAL e resumos especificos"}
+            }
+        },
+        {
+            "aba_resumo_global",
+            "RESUMO_GLOBAL",
+            "Planilha",
+            "Quadro consolidado dos elementos com vazoes, areas e ordem hidrologica.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Campos-chave", "ID, Tipo, Qp, Atotal, Tc_Atotal, ID-JUSANTE"},
+                {"Funcao", "Painel global de resultados"}
+            }
+        },
+        {
+            "aba_bacias_resumo",
+            "BACIAS_RESUMO",
+            "Planilha",
+            "Resumo sintetico das bacias para conferencia rapida.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Resumo de bacias"}
+            }
+        },
+        {
+            "aba_rusle_resumo",
+            "RUSLE_RESUMO",
+            "Planilha",
+            "Resumo da perda de solo estimada.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Resumo de RUSLE"}
+            }
+        },
+        {
+            "aba_canais_resumo",
+            "CANAIS_RESUMO",
+            "Planilha",
+            "Resumo dos canais com geometria, vazao e folga hidraulica.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Campos-chave", "Geometry, Qp, Hmax water, Freeboard"},
+                {"Funcao", "Resumo de canais"}
+            }
+        },
+        {
+            "aba_bueiros_resumo",
+            "BUEIROS_RESUMO",
+            "Planilha",
+            "Resumo dos bueiros com vazoes parciais e totais por TR.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Resumo de bueiros"}
+            }
+        },
+        {
+            "aba_diss_ressalto_resumo",
+            "DISS_RESSALTO_RESUMO",
+            "Planilha",
+            "Resumo dos dissipadores por ressalto.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Funcao", "Resumo de dissipadores"}
+            }
+        },
+        {
+            "auxiliares",
+            "Tabelas auxiliares",
+            "Macrocomponente",
+            "Bibliotecas complementares e tabelas de consulta geral do dimensionamento.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Macrocomponente"},
+                {"Aba base", "TABELAS_AUXILIARES_DIVERSAS"}
+            }
+        },
+        {
+            "aba_tabelas_aux",
+            "TABELAS_AUXILIARES_DIVERSAS",
+            "Planilha",
+            "Biblioteca de combinacoes, pecas e parametros auxiliares para dispositivos.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Planilha"},
+                {"Campos-chave", "No bueiros, D, dispositivo, combinacoes usuais"},
+                {"Funcao", "Consulta auxiliar de dimensionamento"}
             }
         }
     };
@@ -675,15 +1151,9 @@ void MainWindow::popularArvoreRede()
     }
 
     const QIcon iconeProjeto = style()->standardIcon(QStyle::SP_DirHomeIcon);
-    const QIcon iconePasta = style()->standardIcon(QStyle::SP_DirClosedIcon);
     const QIcon iconePastaAberta = style()->standardIcon(QStyle::SP_DirOpenIcon);
     const QIcon iconeArquivo = style()->standardIcon(QStyle::SP_FileIcon);
     const QIcon iconeSalvar = style()->standardIcon(QStyle::SP_DialogSaveButton);
-
-    auto definirIconePasta = [&](QTreeWidgetItem* item) {
-        item->setIcon(0, iconePasta);
-        item->setData(0, Qt::DecorationRole, iconePasta);
-    };
 
     auto criarItem = [&](QTreeWidgetItem* pai, const QString& chave, const QIcon& icone) {
         const ElementoApresentacao elemento = m_elementos.value(chave);
@@ -701,39 +1171,88 @@ void MainWindow::popularArvoreRede()
     projetoItem->setIcon(0, iconeProjeto);
     m_arvoreRede->addTopLevelItem(projetoItem);
 
-    auto* hidrologiaItem = criarItem(projetoItem, "hidrologia", iconePastaAberta);
-    auto* dadosItem = criarItem(hidrologiaItem, "dados_pluviometricos", iconePastaAberta);
-    criarItem(dadosItem, "serie_ana_3252005", iconeArquivo);
-    criarItem(dadosItem, "chuva_projeto_10a", iconeArquivo);
+    auto* pluviometriaItem = criarItem(projetoItem, "pluviometria_idf", iconePastaAberta);
+    auto* chuvasBaseItem = criarItem(pluviometriaItem, "chuvas_base", iconePastaAberta);
+    criarItem(chuvasBaseItem, "aba_p1dia", iconeArquivo);
+    criarItem(chuvasBaseItem, "aba_taborga_1974", iconeArquivo);
+    criarItem(chuvasBaseItem, "aba_reg_iso_1974", iconeArquivo);
+    criarItem(chuvasBaseItem, "aba_isozonas_2016", iconeArquivo);
+    criarItem(chuvasBaseItem, "aba_reg_iso_2016", iconeArquivo);
+    criarItem(chuvasBaseItem, "aba_regressao_1957", iconeArquivo);
 
-    auto* idfItem = criarItem(hidrologiaItem, "idf", iconePastaAberta);
-    criarItem(idfItem, "idf_fortaleza", iconeArquivo);
-    criarItem(idfItem, "idf_regional", iconeArquivo);
+    auto* analiseIdfItem = criarItem(pluviometriaItem, "analise_idfs", iconePastaAberta);
+    criarItem(analiseIdfItem, "aba_analise_idfs", iconeArquivo);
+    criarItem(analiseIdfItem, "aba_idfs", iconeArquivo);
 
-    auto* geometriaItem = criarItem(projetoItem, "geometria", iconePastaAberta);
-    auto* grupoBacias = criarItem(geometriaItem, "grupo_bacias", iconePastaAberta);
+    auto* hidrologiaItem = criarItem(projetoItem, "hidrologia_perdas", iconePastaAberta);
+    criarItem(hidrologiaItem, "aba_scs_cn_pefetiva", iconeArquivo);
+    criarItem(hidrologiaItem, "aba_c_equivalente", iconeArquivo);
+    criarItem(hidrologiaItem, "aba_scs_cn_c", iconeArquivo);
+    criarItem(hidrologiaItem, "aba_rusle", iconeArquivo);
+    criarItem(hidrologiaItem, "aba_curvas", iconeArquivo);
+
+    auto* geometriaItem = criarItem(projetoItem, "geometria_topologia", iconePastaAberta);
+    auto* cadastrosGeometriaItem = criarItem(geometriaItem, "cadastros_geometria", iconePastaAberta);
+    criarItem(cadastrosGeometriaItem, "aba_nomenclatura", iconeArquivo);
+    criarItem(cadastrosGeometriaItem, "aba_revestimento", iconeArquivo);
+    criarItem(cadastrosGeometriaItem, "aba_secoes_preliminar", iconeArquivo);
+    criarItem(cadastrosGeometriaItem, "aba_secoes_dados", iconeArquivo);
+    criarItem(cadastrosGeometriaItem, "aba_edrh_tipos", iconeArquivo);
+
+    auto* topologiaRedeItem = criarItem(geometriaItem, "topologia_rede", iconePastaAberta);
+    criarItem(topologiaRedeItem, "aba_bacias_topologia", iconeArquivo);
+    criarItem(topologiaRedeItem, "aba_dispositivos_topologia", iconeArquivo);
+
+    auto* redeDrenagemItem = criarItem(geometriaItem, "rede_drenagem", iconePastaAberta);
+    auto* grupoBacias = criarItem(redeDrenagemItem, "grupo_bacias", iconePastaAberta);
     criarItem(grupoBacias, "bacia_montante", iconeArquivo);
     criarItem(grupoBacias, "bacia_leste", iconeArquivo);
 
-    auto* grupoCanais = criarItem(geometriaItem, "grupo_canais", iconePastaAberta);
+    auto* grupoCanais = criarItem(redeDrenagemItem, "grupo_canais", iconePastaAberta);
     criarItem(grupoCanais, "canal_principal", iconeArquivo);
     criarItem(grupoCanais, "trecho_jusante", iconeArquivo);
 
-    auto* grupoEstruturas = criarItem(geometriaItem, "grupo_estruturas", iconePastaAberta);
+    auto* grupoBueiros = criarItem(redeDrenagemItem, "grupo_bueiros", iconePastaAberta);
+    auto* grupoEstruturas = criarItem(redeDrenagemItem, "grupo_estruturas", iconePastaAberta);
     criarItem(grupoEstruturas, "estrutura_saida", iconeArquivo);
 
-    auto* cenariosItem = criarItem(projetoItem, "cenarios", iconePastaAberta);
-    criarItem(cenariosItem, "cenario_preliminar", iconeSalvar);
+    auto* estruturasItem = criarItem(projetoItem, "estruturas_hidraulicas", iconePastaAberta);
+    criarItem(estruturasItem, "aba_bueiros", iconeArquivo);
+    criarItem(estruturasItem, "aba_tubulares", iconeArquivo);
+    criarItem(estruturasItem, "aba_espacamento", iconeArquivo);
+    criarItem(estruturasItem, "aba_res_det", iconeArquivo);
+    criarItem(estruturasItem, "aba_res_sed", iconeArquivo);
+    criarItem(estruturasItem, "aba_diss_ressalto", iconeArquivo);
+    criarItem(estruturasItem, "aba_diss_tapete", iconeArquivo);
+    criarItem(estruturasItem, "aba_diss_bacia", iconeArquivo);
+
+    auto* resumosItem = criarItem(projetoItem, "resumos_relatorios", iconePastaAberta);
+    criarItem(resumosItem, "aba_resumo_global", iconeSalvar);
+    criarItem(resumosItem, "aba_bacias_resumo", iconeSalvar);
+    criarItem(resumosItem, "aba_rusle_resumo", iconeSalvar);
+    criarItem(resumosItem, "aba_canais_resumo", iconeSalvar);
+    criarItem(resumosItem, "aba_bueiros_resumo", iconeSalvar);
+    criarItem(resumosItem, "aba_diss_ressalto_resumo", iconeSalvar);
+
+    auto* auxiliaresItem = criarItem(projetoItem, "auxiliares", iconePastaAberta);
+    criarItem(auxiliaresItem, "aba_tabelas_aux", iconeArquivo);
 
     projetoItem->setExpanded(true);
+    pluviometriaItem->setExpanded(true);
+    chuvasBaseItem->setExpanded(true);
+    analiseIdfItem->setExpanded(true);
     hidrologiaItem->setExpanded(true);
-    dadosItem->setExpanded(true);
-    idfItem->setExpanded(true);
     geometriaItem->setExpanded(true);
+    cadastrosGeometriaItem->setExpanded(true);
+    topologiaRedeItem->setExpanded(true);
+    redeDrenagemItem->setExpanded(true);
     grupoBacias->setExpanded(true);
     grupoCanais->setExpanded(true);
+    grupoBueiros->setExpanded(true);
     grupoEstruturas->setExpanded(true);
-    cenariosItem->setExpanded(true);
+    estruturasItem->setExpanded(true);
+    resumosItem->setExpanded(true);
+    auxiliaresItem->setExpanded(true);
 }
 
 void MainWindow::selecionarPrimeiroElemento()
@@ -951,4 +1470,6 @@ QString MainWindow::chaveElemento(QTreeWidgetItem* item) const
 
     return item->data(0, kRoleElementoId).toString();
 }
+
+
 
