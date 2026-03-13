@@ -2,6 +2,7 @@
 
 #include <QAbstractGraphicsShapeItem>
 #include <QAbstractItemView>
+#include <QAction>
 #include <QDockWidget>
 #include <QFrame>
 #include <QGraphicsEllipseItem>
@@ -13,10 +14,16 @@
 #include <QGraphicsView>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
+#include <QMenuBar>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPen>
+#include <QPoint>
+#include <QStatusBar>
+#include <QStyle>
 #include <QTableWidget>
+#include <QToolBar>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
@@ -42,6 +49,7 @@ MainWindow::MainWindow(QWidget* parent)
     configurarCentro();
     configurarArvoreRede();
     configurarPainelPropriedades();
+    configurarMenuSuperior();
     popularArvoreRede();
     configurarCenaBase();
     selecionarPrimeiroElemento();
@@ -52,6 +60,117 @@ void MainWindow::configurarJanela()
     setWindowTitle("SISTEMAHDR - Explorador de Rede Hidrologica");
     resize(1520, 860);
     setDockOptions(QMainWindow::AnimatedDocks | QMainWindow::AllowNestedDocks);
+    statusBar()->showMessage("Projeto pronto para edicao.");
+}
+
+void MainWindow::configurarMenuSuperior()
+{
+    auto* menuArquivo = menuBar()->addMenu("Arquivo");
+    auto* menuView = menuBar()->addMenu("Exibir");
+    auto* menuProject = menuBar()->addMenu("Projeto");
+    auto* menuComponents = menuBar()->addMenu("Componentes");
+    auto* menuTools = menuBar()->addMenu("Ferramentas");
+    auto* menuWindow = menuBar()->addMenu("Janela");
+    auto* menuHelp = menuBar()->addMenu("Ajuda");
+
+    auto* acaoNovoProjeto = new QAction(style()->standardIcon(QStyle::SP_FileIcon), "Novo Projeto...", this);
+    acaoNovoProjeto->setShortcut(QKeySequence("Ctrl+Shift+N"));
+    connect(acaoNovoProjeto, &QAction::triggered, this, [this]() {
+        statusBar()->showMessage("Acao Novo Projeto acionada.", 4000);
+    });
+
+    auto* acaoAbrirProjeto = new QAction(style()->standardIcon(QStyle::SP_DialogOpenButton), "Abrir Projeto...", this);
+    acaoAbrirProjeto->setShortcut(QKeySequence("Ctrl+Shift+O"));
+    connect(acaoAbrirProjeto, &QAction::triggered, this, [this]() {
+        statusBar()->showMessage("Acao Abrir Projeto acionada.", 4000);
+    });
+
+    auto* acaoSalvarProjeto = new QAction(style()->standardIcon(QStyle::SP_DialogSaveButton), "Salvar Projeto", this);
+    acaoSalvarProjeto->setShortcut(QKeySequence::Save);
+    connect(acaoSalvarProjeto, &QAction::triggered, this, [this]() {
+        statusBar()->showMessage("Projeto salvo (acao base da interface).", 4000);
+    });
+
+    auto* acaoSalvarComo = new QAction(style()->standardIcon(QStyle::SP_DialogSaveButton), "Salvar Projeto Como...", this);
+    acaoSalvarComo->setShortcut(QKeySequence("Ctrl+Shift+S"));
+    connect(acaoSalvarComo, &QAction::triggered, this, [this]() {
+        statusBar()->showMessage("Acao Salvar Como acionada.", 4000);
+    });
+
+    auto* acaoSair = new QAction(style()->standardIcon(QStyle::SP_TitleBarCloseButton), "Sair", this);
+    acaoSair->setShortcut(QKeySequence::Quit);
+    connect(acaoSair, &QAction::triggered, this, &QWidget::close);
+
+    menuArquivo->addAction(acaoNovoProjeto);
+    menuArquivo->addAction(acaoAbrirProjeto);
+    menuArquivo->addSeparator();
+    menuArquivo->addAction(acaoSalvarProjeto);
+    menuArquivo->addAction(acaoSalvarComo);
+    menuArquivo->addSeparator();
+    menuArquivo->addAction(acaoSair);
+
+    auto* acaoAlternarExplorador = m_dockRede ? m_dockRede->toggleViewAction() : new QAction("Explorador do Projeto", this);
+    acaoAlternarExplorador->setText("Explorador do Projeto");
+    menuView->addAction(acaoAlternarExplorador);
+
+    auto* acaoAlternarPropriedades = m_dockPropriedades ? m_dockPropriedades->toggleViewAction() : new QAction("Propriedades", this);
+    acaoAlternarPropriedades->setText("Propriedades");
+    menuView->addAction(acaoAlternarPropriedades);
+
+    auto* acaoGerenciarProjeto = new QAction("Configuracoes do Projeto", this);
+    connect(acaoGerenciarProjeto, &QAction::triggered, this, [this]() {
+        statusBar()->showMessage("Configuracoes de projeto em preparacao.", 4000);
+    });
+    menuProject->addAction(acaoGerenciarProjeto);
+
+    auto* submenuCriarComponente = menuComponents->addMenu("Criar Componente");
+    auto adicionarAcaoComponente = [&](const QString& texto) {
+        auto* acao = new QAction(texto, this);
+        connect(acao, &QAction::triggered, this, [this, texto]() {
+            statusBar()->showMessage(QString("Componente '%1' solicitado.").arg(texto), 4000);
+        });
+        submenuCriarComponente->addAction(acao);
+    };
+
+    adicionarAcaoComponente("Gerenciador de Dados Pluviometricos");
+    adicionarAcaoComponente("Gerenciador de IDF");
+    adicionarAcaoComponente("Gerenciador de Geometria");
+    adicionarAcaoComponente("Gerenciador de Cenarios");
+    adicionarAcaoComponente("Gerenciador de Estudos Hidrologicos");
+
+    auto* acaoFerramentas = new QAction("Catalogo de Ferramentas", this);
+    connect(acaoFerramentas, &QAction::triggered, this, [this]() {
+        statusBar()->showMessage("Catalogo de ferramentas em preparacao.", 4000);
+    });
+    menuTools->addAction(acaoFerramentas);
+
+    auto* acaoOrganizarJanelas = new QAction("Restaurar Layout", this);
+    connect(acaoOrganizarJanelas, &QAction::triggered, this, [this]() {
+        statusBar()->showMessage("Layout restaurado para o padrao.", 4000);
+        if (m_dockRede) {
+            m_dockRede->show();
+        }
+        if (m_dockPropriedades) {
+            m_dockPropriedades->show();
+        }
+    });
+    menuWindow->addAction(acaoOrganizarJanelas);
+
+    auto* acaoAjuda = new QAction("Sobre a Interface", this);
+    connect(acaoAjuda, &QAction::triggered, this, [this]() {
+        statusBar()->showMessage("Base de interface inspirada em RMC BestFit e HEC.", 4000);
+    });
+    menuHelp->addAction(acaoAjuda);
+
+    auto* barraPrincipal = addToolBar("Projeto");
+    barraPrincipal->setMovable(false);
+    barraPrincipal->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    barraPrincipal->addAction(acaoNovoProjeto);
+    barraPrincipal->addAction(acaoAbrirProjeto);
+    barraPrincipal->addSeparator();
+    barraPrincipal->addAction(acaoSalvarProjeto);
+    barraPrincipal->addSeparator();
+    barraPrincipal->addAction(acaoSair);
 }
 
 void MainWindow::configurarCentro()
@@ -94,6 +213,9 @@ void MainWindow::configurarCentro()
 
     setStyleSheet(
         "QMainWindow { background: #dfe6ee; }"
+        "QMenuBar { background: #f3f6fa; border-bottom: 1px solid #c8d3df; }"
+        "QMenuBar::item:selected { background: #d7e6f6; }"
+        "QToolBar { background: #eef4fa; border-bottom: 1px solid #c8d3df; spacing: 6px; padding: 4px; }"
         "QDockWidget { font-size: 12px; }"
         "QDockWidget::title { background: #1f4e79; color: white; padding: 8px 10px; }"
         "QTreeWidget, QTableWidget { background: #f7f9fc; border: 1px solid #c8d3df; }"
@@ -106,19 +228,25 @@ void MainWindow::configurarCentro()
 
 void MainWindow::configurarArvoreRede()
 {
-    m_dockRede = new QDockWidget("Explorador da Rede", this);
+    m_dockRede = new QDockWidget("Explorador do Projeto", this);
     m_dockRede->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     m_dockRede->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
 
     m_arvoreRede = new QTreeWidget(m_dockRede);
     m_arvoreRede->setColumnCount(1);
-    m_arvoreRede->setHeaderLabel("Elementos");
+    m_arvoreRede->setHeaderLabel("Itens do projeto");
     m_arvoreRede->setAlternatingRowColors(true);
     m_arvoreRede->setUniformRowHeights(true);
+    m_arvoreRede->setContextMenuPolicy(Qt::CustomContextMenu);
 
     connect(m_arvoreRede, &QTreeWidget::currentItemChanged, this,
             [this](QTreeWidgetItem* atual, QTreeWidgetItem*) {
                 aplicarSelecao(atual);
+            });
+
+    connect(m_arvoreRede, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint& posicao) {
+                mostrarMenuContextoArvore(posicao);
             });
 
     m_dockRede->setWidget(m_arvoreRede);
@@ -182,7 +310,7 @@ void MainWindow::configurarCenaBase()
         QBrush(QColor("#f9fcff")));
     areaTecnica->setZValue(-10.0);
 
-    auto* tituloMapa = m_cenaRede->addSimpleText("Cena base da rede hidrologica");
+    auto* tituloMapa = m_cenaRede->addSimpleText("Cena base da geometria");
     tituloMapa->setBrush(QColor("#163e63"));
     tituloMapa->setPos(104.0, 86.0);
 
@@ -252,19 +380,153 @@ void MainWindow::popularArvoreRede()
     m_arvoreRede->clear();
     m_elementos.clear();
 
-    auto* projetoItem = new QTreeWidgetItem(QStringList() << "Projeto Exemplo - Rede urbana");
-    projetoItem->setFlags(projetoItem->flags() & ~Qt::ItemIsSelectable);
-    m_arvoreRede->addTopLevelItem(projetoItem);
-
-    auto* grupoBacias = new QTreeWidgetItem(QStringList() << "Bacias de contribuicao");
-    auto* grupoCanais = new QTreeWidgetItem(QStringList() << "Canais e trechos");
-    auto* grupoEstruturas = new QTreeWidgetItem(QStringList() << "Estruturas de controle");
-
-    projetoItem->addChild(grupoBacias);
-    projetoItem->addChild(grupoCanais);
-    projetoItem->addChild(grupoEstruturas);
-
     const QVector<ElementoApresentacao> elementos = {
+        {
+            "projeto_raiz",
+            "Projeto Exemplo - Rede urbana",
+            "Projeto",
+            "Visao geral do projeto, organizada por estudos, dados, geometria e cenarios.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Projeto"},
+                {"Estrutura", "Hidrologia, Geometria, Cenarios"},
+                {"Sistema de unidades", "SI"},
+                {"Status", "Interface base pronta para integracao"}
+            }
+        },
+        {
+            "hidrologia",
+            "Hidrologia",
+            "Grupo de estudo",
+            "Agrupa os dados e modelos hidrologicos do projeto.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Grupo de estudo"},
+                {"Subgrupos", "Dados pluviometricos, IDF"},
+                {"Uso", "Entrada para chuva-vazao"}
+            }
+        },
+        {
+            "dados_pluviometricos",
+            "Dados pluviometricos",
+            "Macroitem",
+            "Agrupa series observadas, tormentas sinteticas e fontes de precipitacao.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Categoria", "Dados pluviometricos"},
+                {"Subitens", "Series observadas, tormentas de projeto"},
+                {"Origem", "ANA / estudos locais"}
+            }
+        },
+        {
+            "serie_ana_3252005",
+            "Serie ANA 3252005",
+            "Serie pluviometrica",
+            "Serie historica principal utilizada para consistencia e analise de eventos observados.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Serie pluviometrica"},
+                {"Estacao", "3252005"},
+                {"Periodo", "2002-2024"},
+                {"Resolucao", "Diaria"},
+                {"Fonte", "Hidroweb ANA"}
+            }
+        },
+        {
+            "chuva_projeto_10a",
+            "Chuva de projeto 10 anos",
+            "Evento sintetico",
+            "Evento de referencia para verificacoes preliminares de microdrenagem.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Evento sintetico"},
+                {"TR", "10 anos"},
+                {"Duracao critica", "30 min"},
+                {"Metodo", "Chicago"}
+            }
+        },
+        {
+            "idf",
+            "IDF",
+            "Macroitem",
+            "Agrupa curvas intensidade-duracao-frequencia disponiveis para o projeto.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Categoria", "IDF"},
+                {"Subitens", "Curvas locais e ajustadas"},
+                {"Uso", "Geracao de chuvas de projeto"}
+            }
+        },
+        {
+            "idf_fortaleza",
+            "IDF Fortaleza",
+            "Curva IDF",
+            "Curva base para duracoes curtas aplicada aos cenarios urbanos do projeto.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Curva IDF"},
+                {"Localidade", "Fortaleza"},
+                {"Faixa de duracao", "5 a 1440 min"},
+                {"Fonte", "Bibliografia local"}
+            }
+        },
+        {
+            "idf_regional",
+            "IDF Regional Ajustada",
+            "Curva IDF",
+            "Alternativa regional para comparacao de sensibilidade dos resultados.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Curva IDF"},
+                {"Abrangencia", "Regional"},
+                {"Ajuste", "Gumbel"},
+                {"Observacao", "Usar para comparacao"}
+            }
+        },
+        {
+            "geometria",
+            "Geometria",
+            "Macroitem",
+            "Concentra a rede de drenagem e os elementos fisicos representados na cena central.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Categoria", "Geometria"},
+                {"Subgrupos", "Bacias, canais, estruturas"},
+                {"Visualizacao", "QGraphicsScene"}
+            }
+        },
+        {
+            "grupo_bacias",
+            "Bacias de contribuicao",
+            "Grupo geometrico",
+            "Subgrupo da geometria dedicado as areas de contribuicao hidrologica.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Grupo geometrico"},
+                {"Elementos", "2"},
+                {"Representacao", "Poligonos na cena"}
+            }
+        },
         {
             "bacia_montante",
             "Bacia Montante",
@@ -295,6 +557,20 @@ void MainWindow::popularArvoreRede()
                 {"Declividade media", "4,1 %"},
                 {"Tempo de concentracao", "22 min"},
                 {"Elemento jusante", "Juncao J-02"}
+            }
+        },
+        {
+            "grupo_canais",
+            "Canais e trechos",
+            "Grupo geometrico",
+            "Subgrupo com os condutos e trechos abertos principais da rede.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Grupo geometrico"},
+                {"Elementos", "2"},
+                {"Representacao", "Eixo e blocos na cena"}
             }
         },
         {
@@ -334,6 +610,20 @@ void MainWindow::popularArvoreRede()
             }
         },
         {
+            "grupo_estruturas",
+            "Estruturas de controle",
+            "Grupo geometrico",
+            "Subgrupo de dispositivos especiais conectados a rede principal.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Grupo geometrico"},
+                {"Elementos", "1"},
+                {"Representacao", "Elemento especial na descarga"}
+            }
+        },
+        {
             "estrutura_saida",
             "Estrutura de Saida",
             "Dissipador / descarga",
@@ -349,6 +639,34 @@ void MainWindow::popularArvoreRede()
                 {"Condicao", "Descarga livre"},
                 {"Observacao", "Verificar dissipacao a jusante"}
             }
+        },
+        {
+            "cenarios",
+            "Cenarios de projeto",
+            "Macroitem",
+            "Area reservada para agrupar alternativas de simulacao e comparacao de premissas.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Categoria", "Cenarios"},
+                {"Subitens", "Preliminar, executivo"},
+                {"Status", "Estrutura inicial"}
+            }
+        },
+        {
+            "cenario_preliminar",
+            "Cenario preliminar",
+            "Cenario",
+            "Configuracao base usada para organizar os dados atuais da interface.",
+            0.0,
+            0.0,
+            0.0,
+            {
+                {"Tipo", "Cenario"},
+                {"Descricao", "Base de trabalho inicial"},
+                {"Rede ativa", "Geometria principal"}
+            }
         }
     };
 
@@ -356,24 +674,66 @@ void MainWindow::popularArvoreRede()
         m_elementos.insert(elemento.id, elemento);
     }
 
-    auto criarItemElemento = [&](QTreeWidgetItem* pai, const QString& chave) {
+    const QIcon iconeProjeto = style()->standardIcon(QStyle::SP_DirHomeIcon);
+    const QIcon iconePasta = style()->standardIcon(QStyle::SP_DirClosedIcon);
+    const QIcon iconePastaAberta = style()->standardIcon(QStyle::SP_DirOpenIcon);
+    const QIcon iconeArquivo = style()->standardIcon(QStyle::SP_FileIcon);
+    const QIcon iconeSalvar = style()->standardIcon(QStyle::SP_DialogSaveButton);
+
+    auto definirIconePasta = [&](QTreeWidgetItem* item) {
+        item->setIcon(0, iconePasta);
+        item->setData(0, Qt::DecorationRole, iconePasta);
+    };
+
+    auto criarItem = [&](QTreeWidgetItem* pai, const QString& chave, const QIcon& icone) {
         const ElementoApresentacao elemento = m_elementos.value(chave);
         auto* item = new QTreeWidgetItem(QStringList() << elemento.nome);
         item->setData(0, kRoleElementoId, chave);
         item->setToolTip(0, elemento.tipo);
+        item->setIcon(0, icone);
         pai->addChild(item);
+        return item;
     };
 
-    criarItemElemento(grupoBacias, "bacia_montante");
-    criarItemElemento(grupoBacias, "bacia_leste");
-    criarItemElemento(grupoCanais, "canal_principal");
-    criarItemElemento(grupoCanais, "trecho_jusante");
-    criarItemElemento(grupoEstruturas, "estrutura_saida");
+    auto* projetoItem = new QTreeWidgetItem(QStringList() << m_elementos.value("projeto_raiz").nome);
+    projetoItem->setData(0, kRoleElementoId, "projeto_raiz");
+    projetoItem->setToolTip(0, m_elementos.value("projeto_raiz").tipo);
+    projetoItem->setIcon(0, iconeProjeto);
+    m_arvoreRede->addTopLevelItem(projetoItem);
+
+    auto* hidrologiaItem = criarItem(projetoItem, "hidrologia", iconePastaAberta);
+    auto* dadosItem = criarItem(hidrologiaItem, "dados_pluviometricos", iconePastaAberta);
+    criarItem(dadosItem, "serie_ana_3252005", iconeArquivo);
+    criarItem(dadosItem, "chuva_projeto_10a", iconeArquivo);
+
+    auto* idfItem = criarItem(hidrologiaItem, "idf", iconePastaAberta);
+    criarItem(idfItem, "idf_fortaleza", iconeArquivo);
+    criarItem(idfItem, "idf_regional", iconeArquivo);
+
+    auto* geometriaItem = criarItem(projetoItem, "geometria", iconePastaAberta);
+    auto* grupoBacias = criarItem(geometriaItem, "grupo_bacias", iconePastaAberta);
+    criarItem(grupoBacias, "bacia_montante", iconeArquivo);
+    criarItem(grupoBacias, "bacia_leste", iconeArquivo);
+
+    auto* grupoCanais = criarItem(geometriaItem, "grupo_canais", iconePastaAberta);
+    criarItem(grupoCanais, "canal_principal", iconeArquivo);
+    criarItem(grupoCanais, "trecho_jusante", iconeArquivo);
+
+    auto* grupoEstruturas = criarItem(geometriaItem, "grupo_estruturas", iconePastaAberta);
+    criarItem(grupoEstruturas, "estrutura_saida", iconeArquivo);
+
+    auto* cenariosItem = criarItem(projetoItem, "cenarios", iconePastaAberta);
+    criarItem(cenariosItem, "cenario_preliminar", iconeSalvar);
 
     projetoItem->setExpanded(true);
+    hidrologiaItem->setExpanded(true);
+    dadosItem->setExpanded(true);
+    idfItem->setExpanded(true);
+    geometriaItem->setExpanded(true);
     grupoBacias->setExpanded(true);
     grupoCanais->setExpanded(true);
     grupoEstruturas->setExpanded(true);
+    cenariosItem->setExpanded(true);
 }
 
 void MainWindow::selecionarPrimeiroElemento()
@@ -387,12 +747,17 @@ void MainWindow::selecionarPrimeiroElemento()
         return;
     }
 
-    QTreeWidgetItem* grupo = projetoItem->child(0);
-    if (!grupo || grupo->childCount() == 0) {
+    QTreeWidgetItem* estudoItem = projetoItem->child(0);
+    if (!estudoItem || estudoItem->childCount() == 0) {
         return;
     }
 
-    m_arvoreRede->setCurrentItem(grupo->child(0));
+    QTreeWidgetItem* macroItem = estudoItem->child(0);
+    if (!macroItem || macroItem->childCount() == 0) {
+        return;
+    }
+
+    m_arvoreRede->setCurrentItem(macroItem->child(0));
 }
 
 void MainWindow::aplicarSelecao(QTreeWidgetItem* item)
@@ -469,7 +834,113 @@ void MainWindow::destacarElementoCena(const QString& chaveElemento)
         shape->setPen(criarPenPadrao(corDestaqueContorno, 4.0));
         shape->setZValue(5.0);
         m_viewRede->fitInView(shape->sceneBoundingRect().adjusted(-150.0, -110.0, 150.0, 110.0), Qt::KeepAspectRatio);
+    } else {
+        m_viewRede->fitInView(m_cenaRede->sceneRect().adjusted(60.0, 40.0, -60.0, -40.0), Qt::KeepAspectRatio);
     }
+}
+
+void MainWindow::mostrarMenuContextoArvore(const QPoint& posicao)
+{
+    QTreeWidgetItem* itemSelecionado = m_arvoreRede->itemAt(posicao);
+    if (!itemSelecionado) {
+        itemSelecionado = m_arvoreRede->currentItem();
+    }
+    if (!itemSelecionado) {
+        return;
+    }
+
+    m_arvoreRede->setCurrentItem(itemSelecionado);
+    const bool podeReceberFilhos = (itemSelecionado->childCount() > 0) || (itemSelecionado == m_arvoreRede->topLevelItem(0));
+
+    QMenu menuContexto(this);
+    auto* acaoNovoItem = menuContexto.addAction(style()->standardIcon(QStyle::SP_FileIcon), "Novo Item...");
+    auto* acaoNovoGrupo = menuContexto.addAction(style()->standardIcon(QStyle::SP_DirClosedIcon), "Adicionar Novo Grupo");
+    menuContexto.addSeparator();
+    auto* acaoOrdenarAsc = menuContexto.addAction("Ordenar Crescente");
+    auto* acaoOrdenarDesc = menuContexto.addAction("Ordenar Decrescente");
+
+    acaoNovoItem->setEnabled(podeReceberFilhos);
+    acaoNovoGrupo->setEnabled(podeReceberFilhos);
+
+    QAction* acaoSelecionada = menuContexto.exec(m_arvoreRede->viewport()->mapToGlobal(posicao));
+    if (!acaoSelecionada) {
+        return;
+    }
+
+    if (acaoSelecionada == acaoNovoItem) {
+        QTreeWidgetItem* novoItem = adicionarElementoArvore(
+            itemSelecionado,
+            "item_usuario",
+            "Novo item",
+            "Item do projeto",
+            "Item criado a partir do menu de contexto do explorador.",
+            {
+                {"Tipo", "Item do projeto"},
+                {"Origem", "Criado manualmente"},
+                {"Pai", itemSelecionado->text(0)}
+            });
+        itemSelecionado->setExpanded(true);
+        m_arvoreRede->setCurrentItem(novoItem);
+        statusBar()->showMessage("Novo item adicionado ao explorador.", 4000);
+    } else if (acaoSelecionada == acaoNovoGrupo) {
+        QTreeWidgetItem* novoGrupo = adicionarElementoArvore(
+            itemSelecionado,
+            "grupo_usuario",
+            "Novo grupo",
+            "Grupo do projeto",
+            "Grupo criado para organizar novos subitens do projeto.",
+            {
+                {"Tipo", "Grupo do projeto"},
+                {"Origem", "Criado manualmente"},
+                {"Pai", itemSelecionado->text(0)}
+            },
+            true);
+        itemSelecionado->setExpanded(true);
+        m_arvoreRede->setCurrentItem(novoGrupo);
+        statusBar()->showMessage("Novo grupo adicionado ao explorador.", 4000);
+    } else if (acaoSelecionada == acaoOrdenarAsc) {
+        itemSelecionado->sortChildren(0, Qt::AscendingOrder);
+        statusBar()->showMessage("Itens ordenados em ordem crescente.", 3000);
+    } else if (acaoSelecionada == acaoOrdenarDesc) {
+        itemSelecionado->sortChildren(0, Qt::DescendingOrder);
+        statusBar()->showMessage("Itens ordenados em ordem decrescente.", 3000);
+    }
+}
+
+QString MainWindow::gerarIdElemento(const QString& prefixo) const
+{
+    int indice = m_elementos.size() + 1;
+    QString id;
+    do {
+        id = QString("%1_%2").arg(prefixo).arg(indice++);
+    } while (m_elementos.contains(id));
+    return id;
+}
+
+QTreeWidgetItem* MainWindow::adicionarElementoArvore(QTreeWidgetItem* pai,
+                                                     const QString& prefixo,
+                                                     const QString& nome,
+                                                     const QString& tipo,
+                                                     const QString& resumo,
+                                                     const QVector<PropriedadeElemento>& propriedades,
+                                                     bool comoGrupo)
+{
+    const QString id = gerarIdElemento(prefixo);
+
+    ElementoApresentacao elemento;
+    elemento.id = id;
+    elemento.nome = QString("%1 %2").arg(nome).arg(m_elementos.size());
+    elemento.tipo = tipo;
+    elemento.resumo = resumo;
+    elemento.propriedades = propriedades;
+    m_elementos.insert(id, elemento);
+
+    auto* item = new QTreeWidgetItem(QStringList() << elemento.nome);
+    item->setData(0, kRoleElementoId, id);
+    item->setToolTip(0, tipo);
+    item->setIcon(0, style()->standardIcon(comoGrupo ? QStyle::SP_DirClosedIcon : QStyle::SP_FileIcon));
+    pai->addChild(item);
+    return item;
 }
 
 QString MainWindow::chaveElemento(QTreeWidgetItem* item) const
@@ -480,3 +951,4 @@ QString MainWindow::chaveElemento(QTreeWidgetItem* item) const
 
     return item->data(0, kRoleElementoId).toString();
 }
+
