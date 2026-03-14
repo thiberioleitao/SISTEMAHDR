@@ -10,30 +10,16 @@ class ModeloTransformacaoChuvaVazao;
 class BaciaContribuicao
 {
 public:
-    BaciaContribuicao();
-
-    BaciaContribuicao(const QString& nome,
-                      const QString& idJusante,
-                      double areaKm2,
-                      double declividadeMedia,
-                      double comprimentoTalveguePrincipalKm);
+    BaciaContribuicao() = default;
 
     BaciaContribuicao(const QString& nome,
                       double areaKm2,
                       double declividadeMedia,
-                      double comprimentoTalveguePrincipalKm);
-
-    BaciaContribuicao(double areaKm2,
-                      double declividadeMedia,
-                      double comprimentoTalveguePrincipalKm);
-
-    const QString& id() const;
+                      double comprimentoTalveguePrincipalKm,
+                      double C_10 = 0.0);
 
     const QString& nome() const;
     void setNome(const QString& nome);
-
-    const QString& idJusante() const;
-    void setIdJusante(const QString& idJusante);
 
     double areaKm2() const;
     void setAreaKm2(double valor);
@@ -44,6 +30,9 @@ public:
     double comprimentoTalveguePrincipalKm() const;
     void setComprimentoTalveguePrincipalKm(double valor);
 
+    double C_10() const;
+    void setC_10(double valor);
+
     const std::shared_ptr<ModeloInfiltracao>& modeloInfiltracao() const;
     void setModeloInfiltracao(const std::shared_ptr<ModeloInfiltracao>& modelo);
 
@@ -53,14 +42,11 @@ public:
     double calcularVazaoProjeto(double intensidadeChuvaBrutaMmH) const;
 
 private:
-    static QString gerarIdAutomatico();
-
-    QString m_id;
     QString m_nome;
-    QString m_idJusante;
     double m_areaKm2 = 0.0;
     double m_declividadeMedia = 0.0;
     double m_comprimentoTalveguePrincipalKm = 0.0;
+    double m_C_10 = 0.0;
 
     std::shared_ptr<ModeloInfiltracao> m_modeloInfiltracao;
     std::shared_ptr<ModeloTransformacaoChuvaVazao> m_modeloTransformacao;

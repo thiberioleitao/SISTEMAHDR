@@ -1,6 +1,5 @@
 #pragma once
 
-#include "CalculoHidraulicoCanal.h"
 #include "RevestimentoCanal.h"
 #include "SecaoTransversalTrapezoidal.h"
 
@@ -13,18 +12,9 @@ public:
 
     CanalTrecho(const QString& nome,
                 double comprimento,
-                double larguraFundo,
-                double alturaLaminaProjeto,
-                double taludeLateral,
-                double declividadeFundo,
-                double coeficienteManning);
-
-    CanalTrecho(const QString& nome,
-                double comprimento,
                 const SecaoTransversalTrapezoidal& secao,
                 double declividadeFundo,
-                const RevestimentoCanal& revestimento,
-                double alturaLaminaProjeto = 0.0);
+                const RevestimentoCanal& revestimento);
 
     const QString& nome() const;
     void setNome(const QString& nome);
@@ -34,9 +24,6 @@ public:
 
     double larguraFundo() const;
     void setLarguraFundo(double valor);
-
-    double alturaLaminaProjeto() const;
-    void setAlturaLaminaProjeto(double valor);
 
     double taludeLateral() const;
     void setTaludeLateral(double valor);
@@ -65,13 +52,15 @@ public:
 
     double vazaoManning(double alturaLamina) const;
 
-    double vazaoProjeto() const;
+    double alturaLaminaParaVazaoProjeto(double vazaoProjeto,
+                                        double alturaMaximaBusca = 10.0,
+                                        double tolerancia = 1e-6,
+                                        int maxIteracoes = 100) const;
 
 private:
     QString m_nome;
     double m_comprimento = 0.0;
     SecaoTransversalTrapezoidal m_secao;
-    double m_alturaLaminaProjeto = 0.0;
     double m_declividadeFundo = 0.0;
     RevestimentoCanal m_revestimento;
 };

@@ -7,10 +7,19 @@
 #include <QStringList>
 #include <QVector>
 
+enum class TipoElementoRede
+{
+    Canal,
+    BaciaContribuicao,
+    Bueiro,
+    Outro
+};
+
 struct ElementoRedeHidrologica
 {
     QString id;
     QString idJusante;
+    TipoElementoRede tipo = TipoElementoRede::Canal;
 };
 
 class RedeHidrologica
@@ -24,9 +33,11 @@ public:
 
     bool adicionarElemento(const QString& id,
                           const QString& idJusante,
+                          TipoElementoRede tipo = TipoElementoRede::Canal,
                           QString* erro = nullptr);
 
     QString adicionarElementoComIdAutomatico(const QString& idJusante,
+                                             TipoElementoRede tipo = TipoElementoRede::Canal,
                                              const QString& prefixo = "E",
                                              QString* erro = nullptr);
 
@@ -35,19 +46,19 @@ public:
                                   QString* erro = nullptr,
                                   QStringList* avisos = nullptr);
 
-    const QVector<BaciaContribuicao>& bacias() const;
+    const QMap<QString, BaciaContribuicao>& baciasPorId() const;
 
-    QMap<QString, double> contribuicaoBasePorElemento() const;
+    const BaciaContribuicao* baciaPorId(const QString& idElemento) const;
+
+    double contribuicaoBaciasParaElemento(const QString& idElemento,
+                                          double intensidadeChuvaBrutaMmH,
+                                          QString* erro = nullptr) const;
 
     const QVector<ElementoRedeHidrologica>& elementos() const;
-
-    QMap<QString, double> calcularVazaoAcumuladaPorElemento(
-        const QMap<QString, double>& contribuicaoPorElemento = QMap<QString, double>(),
-        QString* erro = nullptr) const;
 
     void limpar();
 
 private:
     QVector<ElementoRedeHidrologica> m_elementos;
-    QVector<BaciaContribuicao> m_bacias;
+    QMap<QString, BaciaContribuicao> m_baciasPorId;
 };

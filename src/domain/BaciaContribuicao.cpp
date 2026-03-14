@@ -5,31 +5,17 @@
 
 #include <algorithm>
 
-BaciaContribuicao::BaciaContribuicao(const QString& id,
-                                     const QString& idJusante,
+BaciaContribuicao::BaciaContribuicao(const QString& nome,
                                      double areaKm2,
                                      double declividadeMedia,
-                                     double comprimentoTalveguePrincipalKm)
-    : m_id(id)
-    , m_idJusante(idJusante)
+                                     double comprimentoTalveguePrincipalKm,
+                                     double C_10)
+    : m_nome(nome)
     , m_areaKm2(std::max(0.0, areaKm2))
     , m_declividadeMedia(std::max(0.0, declividadeMedia))
     , m_comprimentoTalveguePrincipalKm(std::max(0.0, comprimentoTalveguePrincipalKm))
+    , m_C_10(std::max(0.0, C_10))
 {
-}
-
-BaciaContribuicao::BaciaContribuicao(double areaKm2,
-                                     double declividadeMedia,
-                                     double comprimentoTalveguePrincipalKm)
-    : m_areaKm2(std::max(0.0, areaKm2))
-    , m_declividadeMedia(std::max(0.0, declividadeMedia))
-    , m_comprimentoTalveguePrincipalKm(std::max(0.0, comprimentoTalveguePrincipalKm))
-{
-}
-
-const QString& BaciaContribuicao::id() const
-{
-    return m_id;
 }
 
 const QString& BaciaContribuicao::nome() const
@@ -40,16 +26,6 @@ const QString& BaciaContribuicao::nome() const
 void BaciaContribuicao::setNome(const QString& nome)
 {
     m_nome = nome;
-}
-
-const QString& BaciaContribuicao::idJusante() const
-{
-    return m_idJusante;
-}
-
-void BaciaContribuicao::setIdJusante(const QString& idJusante)
-{
-    m_idJusante = idJusante;
 }
 
 double BaciaContribuicao::areaKm2() const
@@ -80,6 +56,16 @@ double BaciaContribuicao::comprimentoTalveguePrincipalKm() const
 void BaciaContribuicao::setComprimentoTalveguePrincipalKm(double valor)
 {
     m_comprimentoTalveguePrincipalKm = std::max(0.0, valor);
+}
+
+double BaciaContribuicao::C_10() const
+{
+    return m_C_10;
+}
+
+void BaciaContribuicao::setC_10(double valor)
+{
+    m_C_10 = std::max(0.0, valor);
 }
 
 const std::shared_ptr<ModeloInfiltracao>& BaciaContribuicao::modeloInfiltracao() const

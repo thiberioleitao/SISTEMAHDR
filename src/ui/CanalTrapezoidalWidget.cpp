@@ -1,6 +1,6 @@
 #include "CanalTrapezoidalWidget.h"
 
-#include "domain/CalculoHidraulicoCanal.h"
+#include "domain/Canal.h"
 #include "domain/SecaoTransversalTrapezoidal.h"
 
 #include <QDoubleSpinBox>
@@ -340,6 +340,6 @@ void CanalTrapezoidalWidget::calcularVazaoPainel()
     const double n = m_inputManningPainel->value();
 
     const SecaoTransversalTrapezoidal secao(b, z);
-    const double vazao = CalculoHidraulicoCanal::vazaoProjeto(secao, h, s, n);
+    const double vazao = Canal::vazaoManning(secao, h, s, n);
     m_inputVazaoCalculoPainel->setValue(std::max(0.0, vazao));
 }
