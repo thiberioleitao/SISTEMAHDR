@@ -1,8 +1,8 @@
 #pragma once
 
 #include "CanalTrecho.h"
+#include "SecaoTransversalTrapezoidal.h"
 
-#include <QMap>
 #include <QString>
 #include <QVector>
 
@@ -13,13 +13,6 @@ class Canal
 public:
     Canal() = default;
     explicit Canal(const QString& nome);
-    Canal(const QString& id, const QString& nome, const QString& idJusante = QString());
-
-    const QString& id() const;
-    void setId(const QString& id);
-
-    const QString& idJusante() const;
-    void setIdJusante(const QString& idJusante);
 
     const QString& nome() const;
     void setNome(const QString& nome);
@@ -35,25 +28,36 @@ public:
 
     void limpar();
 
-    double declividadeFundo() const;
-
     double declividadeMedia() const;
 
     double comprimentoTotal() const;
 
-    double vazaoMontante() const;
-    bool atualizarVazaoMontanteDaRede(const RedeHidrologica& rede,
-                                      const QMap<QString, double>& contribuicaoPorElemento,
-                                      QString* erro = nullptr);
 
-    double vazaoContribuicao() const;
-    void setVazaoContribuicao(double valor);
+    double areaAcumuladaTotalContribuinte(const RedeHidrologica& rede,
+                                          QString* erro = nullptr) const;
 
-    double vazaoAssociada() const;
+    double coeficienteEscoamentoMedioPonderado(const RedeHidrologica& rede,
+                                               QString* erro = nullptr) const;
+
+    static double velocidadeManning(const SecaoTransversalTrapezoidal& secao,
+        double alturaLamina,
+        double declividadeFundo,
+        double coeficienteManning);
+
+    static double vazaoManning(const SecaoTransversalTrapezoidal& secao,
+        double alturaLamina,
+        double declividadeFundo,
+        double coeficienteManning);
+
+    static double laminaParaVazao(const SecaoTransversalTrapezoidal& secao,
+        double vazaoDesejada,
+        double declividadeFundo,
+        double coeficienteManning,
+        double tolerancia = 1e-6,
+        int maxIteracoes = 100,
+        double alturaMaximaBusca = 10.0);
 
 private:
-    QString m_id;
-    QString m_idJusante;
     QString m_nome;
     QVector<CanalTrecho> m_trechos;
     double m_vazaoMontante = 0.0;

@@ -1,7 +1,6 @@
 #include "RedeHidrologica.h"
 
 #include <QFile>
-#include <QQueue>
 #include <QStringConverter>
 #include <QTextStream>
 
@@ -88,6 +87,7 @@ QString RedeHidrologica::gerarProximoId(const QString& prefixo) const
 
 bool RedeHidrologica::adicionarElemento(const QString& id,
                                         const QString& idJusante,
+                                        TipoElementoRede tipo,
                                         QString* erro)
 {
     const QString elemId = id.trimmed();
@@ -110,17 +110,18 @@ bool RedeHidrologica::adicionarElemento(const QString& id,
         }
     }
 
-    m_elementos.append({ elemId, jus });
+    m_elementos.append({ elemId, jus, tipo });
     return true;
 }
 
 QString RedeHidrologica::adicionarElementoComIdAutomatico(const QString& idJusante,
+                                                          TipoElementoRede tipo,
                                                           const QString& prefixo,
                                                           QString* erro)
 {
     const QString idGerado = gerarProximoId(prefixo);
 
-    if (!adicionarElemento(idGerado, idJusante, erro)) {
+    if (!adicionarElemento(idGerado, idJusante, tipo, erro)) {
         return QString();
     }
 
@@ -166,7 +167,7 @@ bool RedeHidrologica::importarBaciasCsvCivil3D(const QString& caminhoArquivoCsv,
     int idxSTalvegue = indiceColuna(cabecalho, "S_TALVEGUE");
     int idxJusante = indiceColuna(cabecalho, "ID_JUSANTE");
 
-    if (idxArea < 0 && cabecalho.size() > 2) idxArea = 2; // fallback para coluna ÁREA
+    if (idxArea < 0 && cabecalho.size() > 2) idxArea = 2;
 
     if (idxBacia < 0 || idxArea < 0 || idxLTalvegue < 0 || idxSTalvegue < 0 || idxJusante < 0) {
         if (erro) *erro = "Cabeçalho CSV incompatível com o formato BACIAS_CIVIL3D-B2-R0A.";
@@ -202,15 +203,17 @@ bool RedeHidrologica::importarBaciasCsvCivil3D(const QString& caminhoArquivoCsv,
         const double sTalvegue = parseDoubleFlex(campos.at(idxSTalvegue));
         const QString idJusante = campos.at(idxJusante).trimmed();
 
-        BaciaContribuicao bacia(nome, idJusante, areaKm2, sTalvegue, lTalvegueKm);
+        BaciaContribuicao bacia(nome, areaKm2, sTalvegue, lTalvegueKm);
+
+        const QString idElemento = gerarProximoId("B");
 
         QString erroAdd;
-        if (!adicionarElemento(bacia.id(), bacia.idJusante(), &erroAdd)) {
+        if (!adicionarElemento(idElemento, idJusante, TipoElementoRede::BaciaContribuicao, &erroAdd)) {
             if (erro) *erro = QString("Falha ao incluir bacia da linha %1: %2").arg(linhaNumero).arg(erroAdd);
             return false;
         }
 
-        m_bacias.append(bacia);
+        m_baciasPorId.insert(idElemento, bacia);
         ++importadas;
     }
 
@@ -227,91 +230,44 @@ const QVector<ElementoRedeHidrologica>& RedeHidrologica::elementos() const
     return m_elementos;
 }
 
-const QVector<BaciaContribuicao>& RedeHidrologica::bacias() const
+const QMap<QString, BaciaContribuicao>& RedeHidrologica::baciasPorId() const
 {
-    return m_bacias;
+    return m_baciasPorId;
 }
 
-QMap<QString, double> RedeHidrologica::contribuicaoBasePorElemento() const
+const BaciaContribuicao* RedeHidrologica::baciaPorId(const QString& idElemento) const
 {
-    QMap<QString, double> contribuicao;
-    for (const BaciaContribuicao& b : m_bacias) {
-        contribuicao.insert(b.id(), 0.0);
-    }
-    return contribuicao;
+    const auto it = m_baciasPorId.constFind(idElemento);
+    if (it == m_baciasPorId.cend()) return nullptr;
+    return &it.value();
 }
 
-QMap<QString, double> RedeHidrologica::calcularVazaoAcumuladaPorElemento(
-    const QMap<QString, double>& contribuicaoPorElemento,
-    QString* erro) const
+double RedeHidrologica::contribuicaoBaciasParaElemento(const QString& idElemento,
+                                                       double intensidadeChuvaBrutaMmH,
+                                                       QString* erro) const
 {
-    QMap<QString, double> vazaoAcumuladaPorElemento;
     if (erro) erro->clear();
 
-    if (m_elementos.isEmpty()) {
-        return vazaoAcumuladaPorElemento;
+    const QString idAlvo = idElemento.trimmed();
+    if (idAlvo.isEmpty()) {
+        if (erro) *erro = "ID do elemento não informado para cálculo de contribuição de bacias.";
+        return 0.0;
     }
 
-    QMap<QString, int> indicePorId;
-    QMap<QString, int> grauEntrada;
-    QMap<QString, double> vazaoEntradaAcumulada;
-
-    for (int i = 0; i < m_elementos.size(); ++i) {
-        const ElementoRedeHidrologica& e = m_elementos.at(i);
-        indicePorId.insert(e.id, i);
-        grauEntrada.insert(e.id, 0);
-        vazaoEntradaAcumulada.insert(e.id, 0.0);
-        vazaoAcumuladaPorElemento.insert(e.id, 0.0);
-    }
-
+    double soma = 0.0;
     for (const ElementoRedeHidrologica& e : m_elementos) {
-        if (e.idJusante.isEmpty()) continue; // exutório da rede
-
-        if (!indicePorId.contains(e.idJusante)) {
-            if (erro) *erro = "ID jusante inexistente na rede: " + e.idJusante;
-            return QMap<QString, double>();
-        }
-
-        grauEntrada[e.idJusante] += 1;
-    }
-
-    QQueue<QString> fila;
-    for (auto it = grauEntrada.cbegin(); it != grauEntrada.cend(); ++it) {
-        if (it.value() == 0) fila.enqueue(it.key());
-    }
-
-    int elementosProcessados = 0;
-
-    while (!fila.isEmpty()) {
-        const QString idAtual = fila.dequeue();
-        const ElementoRedeHidrologica& eAtual = m_elementos.at(indicePorId.value(idAtual));
-
-        const double contribuicaoLocal = std::max(0.0, contribuicaoPorElemento.value(idAtual, 0.0));
-        const double vazaoSaida = vazaoEntradaAcumulada.value(idAtual) + contribuicaoLocal;
-        vazaoAcumuladaPorElemento[idAtual] = vazaoSaida;
-
-        if (!eAtual.idJusante.isEmpty()) {
-            vazaoEntradaAcumulada[eAtual.idJusante] = vazaoEntradaAcumulada.value(eAtual.idJusante) + vazaoSaida;
-
-            grauEntrada[eAtual.idJusante] -= 1;
-            if (grauEntrada.value(eAtual.idJusante) == 0) {
-                fila.enqueue(eAtual.idJusante);
+        if (e.tipo == TipoElementoRede::BaciaContribuicao && e.idJusante == idAlvo) {
+            if (const BaciaContribuicao* b = baciaPorId(e.id)) {
+                soma += std::max(0.0, b->calcularVazaoProjeto(intensidadeChuvaBrutaMmH));
             }
         }
-
-        elementosProcessados += 1;
     }
 
-    if (elementosProcessados != m_elementos.size()) {
-        if (erro) *erro = "A rede possui ciclo ou estrutura inválida para acumulação de vazão.";
-        return QMap<QString, double>();
-    }
-
-    return vazaoAcumuladaPorElemento;
+    return std::max(0.0, soma);
 }
 
 void RedeHidrologica::limpar()
 {
     m_elementos.clear();
-    m_bacias.clear();
+    m_baciasPorId.clear();
 }

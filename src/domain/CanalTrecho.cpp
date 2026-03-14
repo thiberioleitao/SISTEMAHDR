@@ -1,33 +1,17 @@
 #include "CanalTrecho.h"
 
-#include <algorithm>
+#include "Canal.h"
 
-CanalTrecho::CanalTrecho(const QString& nome,
-                         double comprimento,
-                         double larguraFundo,
-                         double alturaLaminaProjeto,
-                         double taludeLateral,
-                         double declividadeFundo,
-                         double coeficienteManning)
-    : m_nome(nome)
-    , m_comprimento(std::max(0.0, comprimento))
-    , m_secao(larguraFundo, taludeLateral)
-    , m_alturaLaminaProjeto(std::max(0.0, alturaLaminaProjeto))
-    , m_declividadeFundo(std::max(0.0, declividadeFundo))
-    , m_revestimento(QString(), coeficienteManning, 0.0)
-{
-}
+#include <algorithm>
 
 CanalTrecho::CanalTrecho(const QString& nome,
                          double comprimento,
                          const SecaoTransversalTrapezoidal& secao,
                          double declividadeFundo,
-                         const RevestimentoCanal& revestimento,
-                         double alturaLaminaProjeto)
+                         const RevestimentoCanal& revestimento)
     : m_nome(nome)
     , m_comprimento(std::max(0.0, comprimento))
     , m_secao(secao)
-    , m_alturaLaminaProjeto(std::max(0.0, alturaLaminaProjeto))
     , m_declividadeFundo(std::max(0.0, declividadeFundo))
     , m_revestimento(revestimento)
 {
@@ -61,16 +45,6 @@ double CanalTrecho::larguraFundo() const
 void CanalTrecho::setLarguraFundo(double valor)
 {
     m_secao.setLarguraFundo(valor);
-}
-
-double CanalTrecho::alturaLaminaProjeto() const
-{
-    return m_alturaLaminaProjeto;
-}
-
-void CanalTrecho::setAlturaLaminaProjeto(double valor)
-{
-    m_alturaLaminaProjeto = std::max(0.0, valor);
 }
 
 double CanalTrecho::taludeLateral() const
@@ -145,7 +119,7 @@ double CanalTrecho::raioHidraulico(double alturaLamina) const
 
 double CanalTrecho::velocidadeManning(double alturaLamina) const
 {
-    return CalculoHidraulicoCanal::velocidadeManning(
+    return Canal::velocidadeManning(
         m_secao,
         alturaLamina,
         m_declividadeFundo,
@@ -154,18 +128,24 @@ double CanalTrecho::velocidadeManning(double alturaLamina) const
 
 double CanalTrecho::vazaoManning(double alturaLamina) const
 {
-    return CalculoHidraulicoCanal::vazaoManning(
+    return Canal::vazaoManning(
         m_secao,
         alturaLamina,
         m_declividadeFundo,
         coeficienteManning());
 }
 
-double CanalTrecho::vazaoProjeto() const
+double CanalTrecho::alturaLaminaParaVazaoProjeto(double vazaoProjeto,
+                                                 double alturaMaximaBusca,
+                                                 double tolerancia,
+                                                 int maxIteracoes) const
 {
-    return CalculoHidraulicoCanal::vazaoProjeto(
+    return Canal::laminaParaVazao(
         m_secao,
-        m_alturaLaminaProjeto,
+        vazaoProjeto,
         m_declividadeFundo,
-        coeficienteManning());
+        coeficienteManning(),
+        tolerancia,
+        maxIteracoes,
+        alturaMaximaBusca);
 }
