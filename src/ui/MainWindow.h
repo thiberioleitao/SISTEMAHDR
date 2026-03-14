@@ -5,6 +5,7 @@
 #include <QString>
 #include <QVector>
 
+class QPoint;
 class QDockWidget;
 class QGraphicsItem;
 class QGraphicsScene;
@@ -41,6 +42,7 @@ private:
     };
 
     void configurarJanela();
+    void configurarMenuSuperior();
     void configurarCentro();
     void configurarArvoreRede();
     void configurarPainelPropriedades();
@@ -50,6 +52,15 @@ private:
     void aplicarSelecao(QTreeWidgetItem* item);
     void atualizarPainelPropriedades(const ElementoApresentacao& elemento);
     void destacarElementoCena(const QString& chaveElemento);
+    void mostrarMenuContextoArvore(const QPoint& posicao);
+    QString gerarIdElemento(const QString& prefixo) const;
+    QTreeWidgetItem* adicionarElementoArvore(QTreeWidgetItem* pai,
+                                             const QString& prefixo,
+                                             const QString& nome,
+                                             const QString& tipo,
+                                             const QString& resumo,
+                                             const QVector<PropriedadeElemento>& propriedades,
+                                             bool comoGrupo = false);
     QString chaveElemento(QTreeWidgetItem* item) const;
 
 private:
