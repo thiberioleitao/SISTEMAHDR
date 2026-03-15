@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <QQueue>
 #include <QSet>
 
 Canal::Canal(const QString& nome)
@@ -194,21 +193,16 @@ double Canal::areaAcumuladaTotalContribuinte(const RedeHidrologica& rede,
         return 0.0;
     }
 
-    // Busca reversa na topologia para encontrar todos os elementos a montante.
+    QString erroMontante;
+    const QVector<QString> idsMontanteLista = rede.idsMontanteDoElemento(idAtual, &erroMontante);
+    if (!erroMontante.isEmpty()) {
+        if (erro) *erro = erroMontante;
+        return 0.0;
+    }
+
     QSet<QString> idsMontante;
-    QQueue<QString> fila;
-    idsMontante.insert(idAtual);
-    fila.enqueue(idAtual);
-
-    while (!fila.isEmpty()) {
-        const QString idAlvo = fila.dequeue();
-
-        for (const ElementoRedeHidrologica& e : rede.elementos()) {
-            if (e.idJusante == idAlvo && !idsMontante.contains(e.id)) {
-                idsMontante.insert(e.id);
-                fila.enqueue(e.id);
-            }
-        }
+    for (const QString& id : idsMontanteLista) {
+        idsMontante.insert(id);
     }
 
     // Soma apenas áreas de elementos do tipo bacia, via mapa id->bacia na rede.
@@ -240,21 +234,16 @@ double Canal::coeficienteEscoamentoMedioPonderado(const RedeHidrologica& rede,
         return 0.0;
     }
 
-    // Reaproveita busca de contribuição total para selecionar bacias a montante.
+    QString erroMontante;
+    const QVector<QString> idsMontanteLista = rede.idsMontanteDoElemento(idAtual, &erroMontante);
+    if (!erroMontante.isEmpty()) {
+        if (erro) *erro = erroMontante;
+        return 0.0;
+    }
+
     QSet<QString> idsMontante;
-    QQueue<QString> fila;
-    idsMontante.insert(idAtual);
-    fila.enqueue(idAtual);
-
-    while (!fila.isEmpty()) {
-        const QString idAlvo = fila.dequeue();
-
-        for (const ElementoRedeHidrologica& e : rede.elementos()) {
-            if (e.idJusante == idAlvo && !idsMontante.contains(e.id)) {
-                idsMontante.insert(e.id);
-                fila.enqueue(e.id);
-            }
-        }
+    for (const QString& id : idsMontanteLista) {
+        idsMontante.insert(id);
     }
 
     double somaArea = 0.0;

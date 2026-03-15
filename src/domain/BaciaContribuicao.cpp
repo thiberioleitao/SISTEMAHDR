@@ -88,7 +88,7 @@ void BaciaContribuicao::setModeloTransformacao(const std::shared_ptr<ModeloTrans
     m_modeloTransformacao = modelo;
 }
 
-double BaciaContribuicao::calcularVazaoProjeto(double intensidadeChuvaBrutaMmH) const
+double BaciaContribuicao::calcularVazaoProjetoMetodoRacional(double intensidadeChuvaBrutaMmH) const
 {
     double intensidadeEfetiva = std::max(0.0, intensidadeChuvaBrutaMmH);
 
@@ -96,7 +96,11 @@ double BaciaContribuicao::calcularVazaoProjeto(double intensidadeChuvaBrutaMmH) 
         intensidadeEfetiva = std::max(0.0, m_modeloInfiltracao->intensidadeEfetivaMmH(*this, intensidadeEfetiva));
     }
 
-    if (!m_modeloTransformacao) return 0.0;
+    if (!m_modeloTransformacao) {
+        m_VazaoProjeto = 0.0;
+        return m_VazaoProjeto;
+    }
 
-    return std::max(0.0, m_modeloTransformacao->vazaoPicoM3s(*this, intensidadeEfetiva));
+    m_VazaoProjeto = std::max(0.0, m_modeloTransformacao->vazaoPicoM3s(*this, intensidadeEfetiva));
+    return m_VazaoProjeto;
 }

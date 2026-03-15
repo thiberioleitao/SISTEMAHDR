@@ -62,7 +62,7 @@ double RegistroElementosRede::contribuicaoBaciasParaElemento(const RedeHidrologi
     for (const ElementoRedeHidrologica& e : rede.elementos()) {
         if (e.tipo == TipoElementoRede::BaciaContribuicao && e.idJusante == idAlvo) {
             if (const BaciaContribuicao* b = baciaPorId(e.id)) {
-                soma += std::max(0.0, b->calcularVazaoProjeto(intensidadeChuvaBrutaMmH));
+                soma += std::max(0.0, b->calcularVazaoProjetoMetodoRacional(intensidadeChuvaBrutaMmH));
             }
         }
     }

@@ -38,6 +38,10 @@ public:
                           TipoElementoRede tipo = TipoElementoRede::Canal,
                           QString* erro = nullptr);
 
+    bool definirJusanteElemento(const QString& idElemento,
+                                const QString& idJusante,
+                                QString* erro = nullptr);
+
     QString adicionarElementoComIdAutomatico(const QString& idJusante,
                                              TipoElementoRede tipo = TipoElementoRede::Canal,
                                              const QString& prefixo = "E",
@@ -59,6 +63,9 @@ public:
     double contribuicaoBaciasParaElemento(const QString& idElemento,
                                           double intensidadeChuvaBrutaMmH,
                                           QString* erro = nullptr) const;
+
+    QVector<QString> idsMontanteDoElemento(const QString& idElemento,
+                                           QString* erro = nullptr) const;
 
     const QVector<ElementoRedeHidrologica>& elementos() const;
 

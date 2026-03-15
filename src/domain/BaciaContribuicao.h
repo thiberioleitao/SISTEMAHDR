@@ -39,7 +39,7 @@ public:
     const std::shared_ptr<ModeloTransformacaoChuvaVazao>& modeloTransformacao() const;
     void setModeloTransformacao(const std::shared_ptr<ModeloTransformacaoChuvaVazao>& modelo);
 
-    double calcularVazaoProjeto(double intensidadeChuvaBrutaMmH) const;
+    double calcularVazaoProjetoMetodoRacional(double intensidadeChuvaBrutaMmH) const;
 
 private:
     QString m_nome;
@@ -47,6 +47,7 @@ private:
     double m_declividadeMedia = 0.0;
     double m_comprimentoTalveguePrincipalKm = 0.0;
     double m_C_10 = 0.0;
+    mutable double m_VazaoProjeto = 0.0;
 
     std::shared_ptr<ModeloInfiltracao> m_modeloInfiltracao;
     std::shared_ptr<ModeloTransformacaoChuvaVazao> m_modeloTransformacao;

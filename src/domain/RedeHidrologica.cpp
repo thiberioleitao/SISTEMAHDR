@@ -1,6 +1,8 @@
 #include "RedeHidrologica.h"
 
 #include <QFile>
+#include <QQueue>
+#include <QSet>
 #include <QStringConverter>
 #include <QTextStream>
 
@@ -111,6 +113,47 @@ bool RedeHidrologica::adicionarElemento(const QString& id,
     }
 
     m_elementos.append({ elemId, jus, tipo });
+    return true;
+}
+
+bool RedeHidrologica::definirJusanteElemento(const QString& idElemento,
+                                             const QString& idJusante,
+                                             QString* erro)
+{
+    if (erro) erro->clear();
+
+    const QString id = idElemento.trimmed();
+    const QString jus = idJusante.trimmed();
+
+    if (id.isEmpty()) {
+        if (erro) *erro = "ID do elemento deve ser informado para definição de jusante.";
+        return false;
+    }
+
+    if (!jus.isEmpty() && id == jus) {
+        if (erro) *erro = "ID do elemento e ID jusante não podem ser iguais.";
+        return false;
+    }
+
+    int indiceElemento = -1;
+    for (int i = 0; i < m_elementos.size(); ++i) {
+        if (m_elementos.at(i).id == id) {
+            indiceElemento = i;
+            break;
+        }
+    }
+
+    if (indiceElemento < 0) {
+        if (erro) *erro = "Elemento inexistente na rede: " + id;
+        return false;
+    }
+
+    if (!jus.isEmpty() && !existeId(jus)) {
+        if (erro) *erro = "ID jusante inexistente na rede: " + jus;
+        return false;
+    }
+
+    m_elementos[indiceElemento].idJusante = jus;
     return true;
 }
 
@@ -255,6 +298,44 @@ double RedeHidrologica::contribuicaoBaciasParaElemento(const QString& idElemento
                                                        QString* erro) const
 {
     return m_registroElementos.contribuicaoBaciasParaElemento(*this, idElemento, intensidadeChuvaBrutaMmH, erro);
+}
+
+QVector<QString> RedeHidrologica::idsMontanteDoElemento(const QString& idElemento,
+                                                        QString* erro) const
+{
+    if (erro) erro->clear();
+
+    const QString idDestino = idElemento.trimmed();
+    if (idDestino.isEmpty()) {
+        if (erro) *erro = "ID do elemento não informado para busca de montantes.";
+        return {};
+    }
+
+    if (!existeId(idDestino)) {
+        if (erro) *erro = "ID do elemento inexistente na rede: " + idDestino;
+        return {};
+    }
+
+    QSet<QString> visitados;
+    QQueue<QString> fila;
+    QVector<QString> idsMontante;
+
+    visitados.insert(idDestino);
+    fila.enqueue(idDestino);
+
+    while (!fila.isEmpty()) {
+        const QString idAlvo = fila.dequeue();
+
+        for (const ElementoRedeHidrologica& e : m_elementos) {
+            if (e.idJusante == idAlvo && !visitados.contains(e.id)) {
+                visitados.insert(e.id);
+                fila.enqueue(e.id);
+                idsMontante.append(e.id);
+            }
+        }
+    }
+
+    return idsMontante;
 }
 
 void RedeHidrologica::limpar()
