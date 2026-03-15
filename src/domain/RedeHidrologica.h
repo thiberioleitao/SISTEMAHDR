@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BaciaContribuicao.h"
+#include "RegistroElementosRede.h"
 
 #include <QMap>
 #include <QString>
@@ -12,6 +13,7 @@ enum class TipoElementoRede
     Canal,
     BaciaContribuicao,
     Bueiro,
+	Exutorio,
     Outro
 };
 
@@ -46,6 +48,10 @@ public:
                                   QString* erro = nullptr,
                                   QStringList* avisos = nullptr);
 
+    bool associarBaciaAoElemento(const QString& idElemento,
+                                 const BaciaContribuicao& bacia,
+                                 QString* erro = nullptr);
+
     const QMap<QString, BaciaContribuicao>& baciasPorId() const;
 
     const BaciaContribuicao* baciaPorId(const QString& idElemento) const;
@@ -60,5 +66,5 @@ public:
 
 private:
     QVector<ElementoRedeHidrologica> m_elementos;
-    QMap<QString, BaciaContribuicao> m_baciasPorId;
+    RegistroElementosRede m_registroElementos;
 };

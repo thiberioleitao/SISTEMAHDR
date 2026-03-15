@@ -213,7 +213,10 @@ bool RedeHidrologica::importarBaciasCsvCivil3D(const QString& caminhoArquivoCsv,
             return false;
         }
 
-        m_baciasPorId.insert(idElemento, bacia);
+        if (!m_registroElementos.associarBaciaAoElemento(*this, idElemento, bacia, &erroAdd)) {
+            if (erro) *erro = QString("Falha ao associar bacia da linha %1: %2").arg(linhaNumero).arg(erroAdd);
+            return false;
+        }
         ++importadas;
     }
 
@@ -225,6 +228,13 @@ bool RedeHidrologica::importarBaciasCsvCivil3D(const QString& caminhoArquivoCsv,
     return true;
 }
 
+bool RedeHidrologica::associarBaciaAoElemento(const QString& idElemento,
+                                              const BaciaContribuicao& bacia,
+                                              QString* erro)
+{
+    return m_registroElementos.associarBaciaAoElemento(*this, idElemento, bacia, erro);
+}
+
 const QVector<ElementoRedeHidrologica>& RedeHidrologica::elementos() const
 {
     return m_elementos;
@@ -232,42 +242,23 @@ const QVector<ElementoRedeHidrologica>& RedeHidrologica::elementos() const
 
 const QMap<QString, BaciaContribuicao>& RedeHidrologica::baciasPorId() const
 {
-    return m_baciasPorId;
+    return m_registroElementos.baciasPorId();
 }
 
 const BaciaContribuicao* RedeHidrologica::baciaPorId(const QString& idElemento) const
 {
-    const auto it = m_baciasPorId.constFind(idElemento);
-    if (it == m_baciasPorId.cend()) return nullptr;
-    return &it.value();
+    return m_registroElementos.baciaPorId(idElemento);
 }
 
 double RedeHidrologica::contribuicaoBaciasParaElemento(const QString& idElemento,
                                                        double intensidadeChuvaBrutaMmH,
                                                        QString* erro) const
 {
-    if (erro) erro->clear();
-
-    const QString idAlvo = idElemento.trimmed();
-    if (idAlvo.isEmpty()) {
-        if (erro) *erro = "ID do elemento não informado para cálculo de contribuição de bacias.";
-        return 0.0;
-    }
-
-    double soma = 0.0;
-    for (const ElementoRedeHidrologica& e : m_elementos) {
-        if (e.tipo == TipoElementoRede::BaciaContribuicao && e.idJusante == idAlvo) {
-            if (const BaciaContribuicao* b = baciaPorId(e.id)) {
-                soma += std::max(0.0, b->calcularVazaoProjeto(intensidadeChuvaBrutaMmH));
-            }
-        }
-    }
-
-    return std::max(0.0, soma);
+    return m_registroElementos.contribuicaoBaciasParaElemento(*this, idElemento, intensidadeChuvaBrutaMmH, erro);
 }
 
 void RedeHidrologica::limpar()
 {
     m_elementos.clear();
-    m_baciasPorId.clear();
+    m_registroElementos.limpar();
 }

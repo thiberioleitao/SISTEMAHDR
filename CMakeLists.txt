@@ -30,6 +30,8 @@ add_executable(SISTEMAHDR
     src/domain/BaciaContribuicao.cpp
     src/domain/CalculadoraAcumulacaoHidrologica.cpp
     src/domain/MetodoRacionalTransformacao.cpp
+    src/domain/RegistroElementosRede.cpp
+    src/domain/RedeHidrologicaTesteManual.cpp
     src/domain/RedeHidrologica.cpp
     src/domain/CanalTrecho.cpp
     src/domain/RevestimentoCanal.cpp
@@ -41,6 +43,7 @@ add_executable(SISTEMAHDR
     src/domain/ModeloInfiltracao.h
     src/domain/ModeloTransformacaoChuvaVazao.h
     src/domain/MetodoRacionalTransformacao.h
+    src/domain/RedeHidrologicaTesteManual.h
     src/domain/RedeHidrologica.h
     src/domain/CanalTrecho.h
     src/domain/SecaoTransversalTrapezoidal.h
