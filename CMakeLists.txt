@@ -27,26 +27,29 @@ add_executable(SISTEMAHDR
     src/ui/MainWindow.cpp
     src/ui/CanalTrapezoidalWidget.cpp
     src/domain/Canal.cpp
+    src/domain/Bueiro.cpp
     src/domain/BaciaContribuicao.cpp
-    src/domain/CalculadoraAcumulacaoHidrologica.cpp
+    src/domain/IDF.cpp
     src/domain/MetodoRacionalTransformacao.cpp
     src/domain/RegistroElementosRede.cpp
     src/domain/RedeHidrologicaTesteManual.cpp
     src/domain/RedeHidrologica.cpp
-    src/domain/CanalTrecho.cpp
+    
     src/domain/RevestimentoCanal.cpp
     src/domain/SeriaPrecipitacoesDiariaHidrowebANA.h
     src/domain/SeriaPrecipitacoesDiariaHidrowebANA.cpp
     src/domain/Canal.h
+    src/domain/Bueiro.h
     src/domain/BaciaContribuicao.h
-    src/domain/CalculadoraAcumulacaoHidrologica.h
-    src/domain/ModeloInfiltracao.h
-    src/domain/ModeloTransformacaoChuvaVazao.h
+    
+    src/domain/IDF.h
     src/domain/MetodoRacionalTransformacao.h
+    src/domain/RegistroElementosRede.h
     src/domain/RedeHidrologicaTesteManual.h
     src/domain/RedeHidrologica.h
-    src/domain/CanalTrecho.h
+    
     src/domain/SecaoTransversalTrapezoidal.h
+    src/domain/SecaoTransversalSemicircular.h
     src/domain/RevestimentoCanal.h
     src/ui/CanalTrapezoidalWidget.h
 )

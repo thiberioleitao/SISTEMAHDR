@@ -9,12 +9,8 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
 
     // Teste manual da rede hidrológica (domínio), exibido no Output.
-    QString erroTeste;
-    const QString relatorioTeste = RedeHidrologicaTesteManual::gerarRelatorioExemplo(&erroTeste);
-    if (!erroTeste.isEmpty()) {
-        qDebug().noquote() << "[TesteManual][ERRO]" << erroTeste;
-    }
-    else {
+    const QString relatorioTeste = RedeHidrologicaTesteManual::gerarRelatorioExemplo();
+    if (!relatorioTeste.isEmpty()) {
         qDebug().noquote() << relatorioTeste;
     }
 

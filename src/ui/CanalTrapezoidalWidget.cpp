@@ -340,6 +340,11 @@ void CanalTrapezoidalWidget::calcularVazaoPainel()
     const double n = m_inputManningPainel->value();
 
     const SecaoTransversalTrapezoidal secao(b, z);
-    const double vazao = Canal::vazaoManning(secao, h, s, n);
+    Canal canal;
+    canal.setSecaoTransversal(secao);
+    canal.setDeclividadeFinal(s);
+    canal.setCoeficienteManning(n);
+
+    const double vazao = canal.vazaoManning(h);
     m_inputVazaoCalculoPainel->setValue(std::max(0.0, vazao));
 }

@@ -15,8 +15,7 @@ public:
     SeriaPrecipitacoesDiariaHidrowebANA();                                  // ctor padrão
 
     bool carregar(const QString& caminhoArquivoCsv,                          // caminho do csv bruto
-        bool preencherDatasAusentes = false,                      // se true, completa datas faltantes com NaN
-        QString* erro = nullptr);                                 // msg de erro (opcional)
+        bool preencherDatasAusentes = false);                     // se true, completa datas faltantes com NaN
 
     const QMap<QDate, double>& serieDiaPx() const;                           // série (Dia → Px)
     bool contem(const QDate& dia) const;                                     // existe na série?

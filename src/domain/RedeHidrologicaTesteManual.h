@@ -7,11 +7,11 @@
 class RedeHidrologicaTesteManual
 {
 public:
-    static bool criarElementosExemplo(RedeHidrologica* rede, QString* erro = nullptr);
+    static bool criarElementosExemplo(RedeHidrologica* rede);
 
-    static bool conectarElementosExemplo(RedeHidrologica* rede, QString* erro = nullptr);
+    static bool conectarElementosExemplo(RedeHidrologica* rede);
 
-    static bool montarRedeExemplo(RedeHidrologica* rede, QString* erro = nullptr);
+    static bool montarRedeExemplo(RedeHidrologica* rede);
 
-    static QString gerarRelatorioExemplo(QString* erro = nullptr);
+    static QString gerarRelatorioExemplo();
 };

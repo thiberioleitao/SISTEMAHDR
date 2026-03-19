@@ -1,33 +1,36 @@
 #pragma once
 
-#include "BaciaContribuicao.h"
-
 #include <QMap>
 #include <QString>
+#include <QVector>
 
 class RedeHidrologica;
+enum class TipoElementoRede;
 
-class RegistroElementosRede
+// Representa um elemento basico da topologia da rede.
+class ElementoTopologicoInterno
 {
 public:
-    RegistroElementosRede() = default;
+    ElementoTopologicoInterno();
+    ElementoTopologicoInterno(const QString& id,
+                              const QString& idJusante,
+                              TipoElementoRede tipo);
 
-    bool associarBaciaAoElemento(const RedeHidrologica& rede,
-                                 const QString& idElemento,
-                                 const BaciaContribuicao& bacia,
-                                 QString* erro = nullptr);
+    QString id;
+    QString idJusante;
+    TipoElementoRede tipo;
+};
 
-    const QMap<QString, BaciaContribuicao>& baciasPorId() const;
-
-    const BaciaContribuicao* baciaPorId(const QString& idElemento) const;
-
-    double contribuicaoBaciasParaElemento(const RedeHidrologica& rede,
-                                          const QString& idElemento,
-                                          double intensityChuvaBrutaMmH,
-                                          QString* erro = nullptr) const;
-
+// Estrutura de apoio para ordenacao topologica.
+class EstruturaTopologica
+{
+public:
     void limpar();
 
-private:
-    QMap<QString, BaciaContribuicao> m_baciasPorId;
+    QMap<QString, int> indicePorId;
+    QMap<QString, int> grauEntrada;
+    QVector<QString> ordemTopologica;
 };
+
+// Monta uma lista topologica com ID, jusante e tipo da rede.
+QVector<ElementoTopologicoInterno> criarElementosTopologicos(const RedeHidrologica& rede);

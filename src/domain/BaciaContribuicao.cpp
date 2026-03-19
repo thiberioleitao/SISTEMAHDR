@@ -1,31 +1,67 @@
 #include "BaciaContribuicao.h"
 
-#include "ModeloInfiltracao.h"
-#include "ModeloTransformacaoChuvaVazao.h"
-
 #include <algorithm>
+#include <cmath>
 
-BaciaContribuicao::BaciaContribuicao(const QString& nome,
-                                     double areaKm2,
-                                     double declividadeMedia,
-                                     double comprimentoTalveguePrincipalKm,
-                                     double C_10)
-    : m_nome(nome)
-    , m_areaKm2(std::max(0.0, areaKm2))
-    , m_declividadeMedia(std::max(0.0, declividadeMedia))
-    , m_comprimentoTalveguePrincipalKm(std::max(0.0, comprimentoTalveguePrincipalKm))
-    , m_C_10(std::max(0.0, C_10))
+namespace
 {
+// Calcula Tc local de Kirpich modificado com Tc de montante já acumulado.
+double calcularTempoKirpichModificadoBase(double comprimentoTalvegueKm,
+                                          double declividadeTalvegue,
+                                          double maiorTempoConcentracaoMontanteMin)
+{
+    const double comprimentoKm = std::max(1e-6, comprimentoTalvegueKm);
+    const double declividade = std::max(1e-6, declividadeTalvegue);
+    const double tcLocalMin = 57.0 * std::pow(comprimentoKm, 0.77) * std::pow(declividade, -0.385);
+    return std::max(std::max(0.0, maiorTempoConcentracaoMontanteMin), std::max(0.0, tcLocalMin));
+}
+}
+
+BaciaContribuicao::BaciaContribuicao(const QString& id)
+{
+    setID(id);
+}
+
+const QString& BaciaContribuicao::id() const
+{
+    return m_id;
+}
+
+void BaciaContribuicao::setID(const QString& id)
+{
+    m_id = id.trimmed();
+}
+
+const QString& BaciaContribuicao::idProprio() const
+{
+    return m_id;
+}
+
+void BaciaContribuicao::setIdProprio(const QString& id)
+{
+    m_id = id.trimmed();
+}
+
+const QString& BaciaContribuicao::idJusante() const
+{
+    return m_idJusante;
+}
+
+void BaciaContribuicao::setIdJusante(const QString& idJusante)
+{
+    const QString idNormalizado = idJusante.trimmed();
+    if (idNormalizado == m_id) return;
+    m_idJusante = idNormalizado;
 }
 
 const QString& BaciaContribuicao::nome() const
 {
-    return m_nome;
+    return m_id;
 }
 
 void BaciaContribuicao::setNome(const QString& nome)
 {
-    m_nome = nome;
+    m_id = nome.trimmed();
 }
 
 double BaciaContribuicao::areaKm2() const
@@ -36,6 +72,16 @@ double BaciaContribuicao::areaKm2() const
 void BaciaContribuicao::setAreaKm2(double valor)
 {
     m_areaKm2 = std::max(0.0, valor);
+}
+
+double BaciaContribuicao::areaM2() const
+{
+    return std::max(0.0, m_areaKm2) * 1000000.0;
+}
+
+void BaciaContribuicao::setAreaM2(double valor)
+{
+    m_areaKm2 = std::max(0.0, valor) / 1000000.0;
 }
 
 double BaciaContribuicao::declividadeMedia() const
@@ -68,39 +114,24 @@ void BaciaContribuicao::setC_10(double valor)
     m_C_10 = std::max(0.0, valor);
 }
 
-const std::shared_ptr<ModeloInfiltracao>& BaciaContribuicao::modeloInfiltracao() const
+double BaciaContribuicao::calcularContribuicaoRacional(double intensidadeChuvaMmH) const
 {
-    return m_modeloInfiltracao;
+    // Fórmula racional local: Q = 0,278 * C * i * A
+    const double c = std::max(0.0, m_C_10);
+    const double i = std::max(0.0, intensidadeChuvaMmH);
+    const double a = std::max(0.0, m_areaKm2);
+
+    m_vazaoProjeto = 0.278 * c * i * a;
+    return m_vazaoProjeto;
 }
 
-void BaciaContribuicao::setModeloInfiltracao(const std::shared_ptr<ModeloInfiltracao>& modelo)
+double BaciaContribuicao::tempoConcentracaoKirpichModificado(double maiorTempoConcentracaoMontanteMin) const
 {
-    m_modeloInfiltracao = modelo;
-}
+    const double comprimentoTalvegueKm = std::max(0.0, m_comprimentoTalveguePrincipalKm);
+    const double declividadeTalvegue = std::max(0.0, m_declividadeMedia);
 
-const std::shared_ptr<ModeloTransformacaoChuvaVazao>& BaciaContribuicao::modeloTransformacao() const
-{
-    return m_modeloTransformacao;
-}
-
-void BaciaContribuicao::setModeloTransformacao(const std::shared_ptr<ModeloTransformacaoChuvaVazao>& modelo)
-{
-    m_modeloTransformacao = modelo;
-}
-
-double BaciaContribuicao::calcularVazaoProjetoMetodoRacional(double intensidadeChuvaBrutaMmH) const
-{
-    double intensidadeEfetiva = std::max(0.0, intensidadeChuvaBrutaMmH);
-
-    if (m_modeloInfiltracao) {
-        intensidadeEfetiva = std::max(0.0, m_modeloInfiltracao->intensidadeEfetivaMmH(*this, intensidadeEfetiva));
-    }
-
-    if (!m_modeloTransformacao) {
-        m_VazaoProjeto = 0.0;
-        return m_VazaoProjeto;
-    }
-
-    m_VazaoProjeto = std::max(0.0, m_modeloTransformacao->vazaoPicoM3s(*this, intensidadeEfetiva));
-    return m_VazaoProjeto;
+    return calcularTempoKirpichModificadoBase(
+        comprimentoTalvegueKm,
+        declividadeTalvegue,
+        maiorTempoConcentracaoMontanteMin);
 }

@@ -165,21 +165,14 @@ void SeriaPrecipitacoesDiariaHidrowebANA::preencherDatasAusentesComNaN()
  * @brief Carrega o CSV bruto do HidroWeb/ANA e monta Dia x Px (mm).
  */
 bool SeriaPrecipitacoesDiariaHidrowebANA::carregar(const QString& caminhoArquivoCsv,
-    bool preencherDatasAusentes,
-    QString* erro)
+    bool preencherDatasAusentes)
 {
     limpar();                                              // reseta estado
 
     QFile arq(caminhoArquivoCsv);                          // handle arquivo
-    if (!arq.exists()) {                                   // existe?
-        if (erro) *erro = "Arquivo não encontrado: " + caminhoArquivoCsv;
-        return false;
-    }
+    if (!arq.exists()) return false;                       // existe?
 
-    if (!arq.open(QIODevice::ReadOnly | QIODevice::Text)) { // abre texto
-        if (erro) *erro = "Não foi possível abrir: " + caminhoArquivoCsv;
-        return false;
-    }
+    if (!arq.open(QIODevice::ReadOnly | QIODevice::Text)) return false; // abre texto
 
     QTextStream ts(&arq);                                  // stream
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
@@ -187,20 +180,14 @@ bool SeriaPrecipitacoesDiariaHidrowebANA::carregar(const QString& caminhoArquivo
 #endif
 
     QString linhaCab;                                      // linha do cabeçalho
-    if (!lerAteCabecalho(ts, &linhaCab)) {                 // acha cabeçalho
-        if (erro) *erro = "Cabeçalho não encontrado (esperado: Data, Chuva01...).";
-        return false;
-    }
+    if (!lerAteCabecalho(ts, &linhaCab)) return false;     // acha cabeçalho
 
     const QChar sep = ';';                                 // separador padrão ANA
     const QStringList colCab = dividirCsv(linhaCab, sep);  // split cabeçalho
     const QMap<QString, int> idx = mapearColunas(colCab);  // índices
 
     // valida colunas mínimas
-    if (!idx.contains("Data") || !idx.contains("NivelConsistencia")) {
-        if (erro) *erro = "Colunas obrigatórias ausentes: Data e/ou NivelConsistencia.";
-        return false;
-    }
+    if (!idx.contains("Data") || !idx.contains("NivelConsistencia")) return false;
 
     // índices das colunas diárias Chuva01..Chuva31 (se existirem)
     QVector<int> idxChuva;                                 // índices das chuvas
@@ -299,10 +286,7 @@ bool SeriaPrecipitacoesDiariaHidrowebANA::carregar(const QString& caminhoArquivo
     }
 
     // validação final
-    if (m_pxPorDia.isEmpty()) {                               // nada carregado
-        if (erro) *erro = "Nenhum dado diário foi gerado (verifique formato/colunas).";
-        return false;
-    }
+    if (m_pxPorDia.isEmpty()) return false;                   // nada carregado
 
     return true;                                              // ok
 }
