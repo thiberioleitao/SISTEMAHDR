@@ -1,21 +1,7 @@
 #include "BaciaContribuicao.h"
+#include "HidrologiaUtils.h"
 
 #include <algorithm>
-#include <cmath>
-
-namespace
-{
-// Calcula Tc local de Kirpich modificado com Tc de montante já acumulado.
-double calcularTempoKirpichModificadoBase(double comprimentoTalvegueKm,
-                                          double declividadeTalvegue,
-                                          double maiorTempoConcentracaoMontanteMin)
-{
-    const double comprimentoKm = std::max(1e-6, comprimentoTalvegueKm);
-    const double declividade = std::max(1e-6, declividadeTalvegue);
-    const double tcLocalMin = 57.0 * std::pow(comprimentoKm, 0.77) * std::pow(declividade, -0.385);
-    return std::max(std::max(0.0, maiorTempoConcentracaoMontanteMin), std::max(0.0, tcLocalMin));
-}
-}
 
 BaciaContribuicao::BaciaContribuicao(const QString& id)
 {
@@ -130,7 +116,7 @@ double BaciaContribuicao::tempoConcentracaoKirpichModificado(double maiorTempoCo
     const double comprimentoTalvegueKm = std::max(0.0, m_comprimentoTalveguePrincipalKm);
     const double declividadeTalvegue = std::max(0.0, m_declividadeMedia);
 
-    return calcularTempoKirpichModificadoBase(
+    return Hidrologia::calcularTcKirpichModificadoMin(
         comprimentoTalvegueKm,
         declividadeTalvegue,
         maiorTempoConcentracaoMontanteMin);

@@ -1,7 +1,9 @@
 #include "RedeHidrologica.h"
+#include "HidrologiaUtils.h"
 
 #include <QQueue>
 #include <QSet>
+#include <QDebug>
 
 #include <algorithm>
 #include <cmath>
@@ -156,6 +158,27 @@ bool RedeHidrologica::definirJusanteElemento(const QString& idElemento,
     if (!idJusanteNormalizado.isEmpty() && idMontante == idJusanteNormalizado) return false;
     if (!idJusanteNormalizado.isEmpty() && !existeId(idJusanteNormalizado)) return false;
 
+    // Evita ciclo indireto: o novo jusante não pode alcançar o próprio montante.
+    if (!idJusanteNormalizado.isEmpty()) {
+        QSet<QString> idsVisitados;
+        QQueue<QString> fila;
+        fila.enqueue(idJusanteNormalizado);
+        idsVisitados.insert(idJusanteNormalizado);
+
+        while (!fila.isEmpty()) {
+            const QString idAtual = fila.dequeue();
+            if (idAtual == idMontante) return false;
+
+            const QString proximoJusante = m_idJusantePorId.value(idAtual);
+            if (proximoJusante.isEmpty()) continue;
+
+            if (!idsVisitados.contains(proximoJusante)) {
+                idsVisitados.insert(proximoJusante);
+                fila.enqueue(proximoJusante);
+            }
+        }
+    }
+
     const QString idJusanteAnterior = m_idJusantePorId.value(idMontante);
 
     if (idJusanteAnterior == idJusanteNormalizado) return true;
@@ -198,6 +221,16 @@ double RedeHidrologica::intensidadeChuvaProjetoMmH() const
 void RedeHidrologica::setIntensidadeChuvaProjetoMmH(double intensidadeChuvaProjetoMmH)
 {
     m_intensidadeChuvaProjetoMmH = std::max(0.0, intensidadeChuvaProjetoMmH);
+}
+
+double RedeHidrologica::tempoConcentracaoMinimoMin() const
+{
+    return std::max(0.0, m_tempoConcentracaoMinimoMin);
+}
+
+void RedeHidrologica::setTempoConcentracaoMinimoMin(double tempoConcentracaoMinimoMin)
+{
+    m_tempoConcentracaoMinimoMin = std::max(0.0, tempoConcentracaoMinimoMin);
 }
 
 const QMap<QString, BaciaContribuicao>& RedeHidrologica::baciasPorId() const
@@ -278,49 +311,126 @@ double RedeHidrologica::contribuicaoBaciasParaElemento(const QString& idElemento
 
 double RedeHidrologica::calcularComprimentoTotalTalvegueAteElemento(const QString& idElemento) const
 {
-    const QString idDestino = idElemento.trimmed();
-    if (idDestino.isEmpty()) return 0.0;
-    if (!existeId(idDestino)) return 0.0;
+    double comprimentoTalvegueKm = 0.0;
+    double declividadeEquivalente = 0.0;
+    if (!calcularTalvegueCriticoAteElemento(idElemento, &comprimentoTalvegueKm, &declividadeEquivalente)) {
+        return 0.0;
+    }
 
-    const QVector<QString> ids = idsElementos();
-    if (ids.isEmpty()) return 0.0;
+    return std::max(0.0, comprimentoTalvegueKm);
+}
+
+bool RedeHidrologica::calcularTalvegueCriticoAteElemento(const QString& idElemento,
+                                                         double* comprimentoTalvegueKm,
+                                                         double* declividadeEquivalente) const
+{
+    if (!comprimentoTalvegueKm || !declividadeEquivalente) return false;
+
+    const QString idAlvo = idElemento.trimmed();
+    if (idAlvo.isEmpty()) return false;
+    if (!existeId(idAlvo)) return false;
 
     const QVector<QString> ordem = ordemTopologica();
-    if (ordem.isEmpty()) return 0.0;
+    if (ordem.isEmpty()) return false;
 
-    QMap<QString, QString> jusantePorId;
-
-    for (const QString& id : ids) {
-        jusantePorId[id] = idJusanteDoElemento(id);
-    }
-
-    QMap<QString, double> comprimentoAcumulado;
-    for (const QString& id : ids) {
-        comprimentoAcumulado[id] = 0.0;
-    }
+    QMap<QString, double> comprimentoTalvegueCriticoPorId;
+    QMap<QString, double> declividadeEquivalenteCriticaPorId;
 
     for (const QString& idAtual : ordem) {
-        double comprimentoLocal = 0.0;
-        if (tipoDoElemento(idAtual) == TipoElementoRede::BaciaContribuicao) {
-            const BaciaContribuicao* bacia = baciaPorId(idAtual);
-            if (!bacia) return 0.0;
+        const QVector<QString> idsMontanteDireto = m_idsMontanteDiretoPorId.value(idAtual);
 
-            const double valor = bacia->comprimentoTalveguePrincipalKm();
-            if (valor < 0.0) return 0.0;
-            comprimentoLocal = valor;
-        }
-
-        double maiorMontante = 0.0;
-        for (const QString& idMontante : ids) {
-            if (jusantePorId.value(idMontante) == idAtual) {
-                maiorMontante = std::max(maiorMontante, comprimentoAcumulado.value(idMontante, 0.0));
+        double maiorComprimentoMontante = 0.0;
+        double declividadeDoMaiorMontante = 0.0;
+        for (const QString& idMontante : idsMontanteDireto) {
+            const double comprimentoMontante = comprimentoTalvegueCriticoPorId.value(idMontante, 0.0);
+            if (comprimentoMontante >= maiorComprimentoMontante) {
+                maiorComprimentoMontante = comprimentoMontante;
+                declividadeDoMaiorMontante = declividadeEquivalenteCriticaPorId.value(idMontante, 0.0);
             }
         }
 
-        comprimentoAcumulado[idAtual] = maiorMontante + comprimentoLocal;
+        double maiorComprimentoMontanteNaoBacia = 0.0;
+        double declividadeDoMaiorMontanteNaoBacia = 0.0;
+        for (const QString& idMontante : idsMontanteDireto) {
+            if (tipoDoElemento(idMontante) == TipoElementoRede::BaciaContribuicao) continue;
+
+            const double comprimentoMontante = comprimentoTalvegueCriticoPorId.value(idMontante, 0.0);
+            if (comprimentoMontante >= maiorComprimentoMontanteNaoBacia) {
+                maiorComprimentoMontanteNaoBacia = comprimentoMontante;
+                declividadeDoMaiorMontanteNaoBacia = declividadeEquivalenteCriticaPorId.value(idMontante, 0.0);
+            }
+        }
+
+        double comprimentoCriticoKm = maiorComprimentoMontante;
+        double declividadeEquivalenteCritica = declividadeDoMaiorMontante;
+
+        if (tipoDoElemento(idAtual) == TipoElementoRede::BaciaContribuicao) {
+            const BaciaContribuicao* bacia = baciaPorId(idAtual);
+            if (!bacia) return false;
+
+            const double comprimentoBaciaKm = std::max(0.0, bacia->comprimentoTalveguePrincipalKm());
+            const double declividadeBacia = std::max(0.0, bacia->declividadeMedia());
+
+            if (comprimentoBaciaKm >= comprimentoCriticoKm) {
+                comprimentoCriticoKm = comprimentoBaciaKm;
+                declividadeEquivalenteCritica = declividadeBacia;
+            }
+        }
+        else if (tipoDoElemento(idAtual) == TipoElementoRede::Canal) {
+            const Canal* canal = canalPorId(idAtual);
+            if (!canal) return false;
+
+            const double comprimentoCanalKm = std::max(0.0, canal->comprimento()) / 1000.0;
+            const double declividadeCanal = std::max(0.0, (canal->declividadeMinima() + canal->declividadeMaxima()) * 0.5);
+
+            const double comprimentoViaMontante = maiorComprimentoMontanteNaoBacia + comprimentoCanalKm;
+            const double declividadeViaMontante = (comprimentoViaMontante > 0.0)
+                                                    ? ((declividadeDoMaiorMontanteNaoBacia * maiorComprimentoMontanteNaoBacia)
+                                                       + (declividadeCanal * comprimentoCanalKm))
+                                                        / comprimentoViaMontante
+                                                    : 0.0;
+
+            double maiorComprimentoBaciaLocal = 0.0;
+            double declividadeBaciaLocal = 0.0;
+            for (const QString& idMontante : idsMontanteDireto) {
+                if (tipoDoElemento(idMontante) != TipoElementoRede::BaciaContribuicao) continue;
+
+                const BaciaContribuicao* baciaLocal = baciaPorId(idMontante);
+                if (!baciaLocal) continue;
+
+                const double comprimentoBaciaKm = std::max(0.0, baciaLocal->comprimentoTalveguePrincipalKm());
+                if (comprimentoBaciaKm >= maiorComprimentoBaciaLocal) {
+                    maiorComprimentoBaciaLocal = comprimentoBaciaKm;
+                    declividadeBaciaLocal = std::max(0.0, baciaLocal->declividadeMedia());
+                }
+            }
+
+            const double comprimentoViaBaciaLocal = maiorComprimentoBaciaLocal + (comprimentoCanalKm * 0.5);
+
+            const double comprimentoBaseSeqViaBaciaLocal = maiorComprimentoBaciaLocal + comprimentoCanalKm;
+            const double declividadeViaBaciaLocal = (comprimentoBaseSeqViaBaciaLocal > 0.0)
+                                                      ? ((declividadeBaciaLocal * maiorComprimentoBaciaLocal)
+                                                         + (declividadeCanal * comprimentoCanalKm))
+                                                          / comprimentoBaseSeqViaBaciaLocal
+                                                      : 0.0;
+
+            if (comprimentoViaBaciaLocal > comprimentoViaMontante) {
+                comprimentoCriticoKm = comprimentoViaBaciaLocal;
+                declividadeEquivalenteCritica = declividadeViaBaciaLocal;
+            }
+            else {
+                comprimentoCriticoKm = comprimentoViaMontante;
+                declividadeEquivalenteCritica = declividadeViaMontante;
+            }
+        }
+
+        comprimentoTalvegueCriticoPorId[idAtual] = std::max(0.0, comprimentoCriticoKm);
+        declividadeEquivalenteCriticaPorId[idAtual] = std::max(0.0, declividadeEquivalenteCritica);
     }
 
-    return std::max(0.0, comprimentoAcumulado.value(idDestino, 0.0));
+    *comprimentoTalvegueKm = comprimentoTalvegueCriticoPorId.value(idAlvo, 0.0);
+    *declividadeEquivalente = declividadeEquivalenteCriticaPorId.value(idAlvo, 0.0);
+    return true;
 }
 
 QMap<QString, double> RedeHidrologica::calcularVazaoAcumuladaPorElemento(
@@ -372,6 +482,11 @@ double RedeHidrologica::areaAcumuladaTotalContribuinte(const QString& idElemento
         idsMontante.insert(id);
     }
 
+    // Para ponto de controle em bacia, inclui a própria bacia local.
+    if (tipoDoElemento(idAtual) == TipoElementoRede::BaciaContribuicao) {
+        idsMontante.insert(idAtual);
+    }
+
     double areaTotal = 0.0;
     for (const QString& id : idsElementos()) {
         if (tipoDoElemento(id) == TipoElementoRede::BaciaContribuicao && idsMontante.contains(id)) {
@@ -394,6 +509,11 @@ double RedeHidrologica::coeficienteEscoamentoMedioPonderado(const QString& idEle
     QSet<QString> idsMontante;
     for (const QString& id : idsMontanteLista) {
         idsMontante.insert(id);
+    }
+
+    // Para ponto de controle em bacia, inclui a própria bacia local.
+    if (tipoDoElemento(idAtual) == TipoElementoRede::BaciaContribuicao) {
+        idsMontante.insert(idAtual);
     }
 
     double somaArea = 0.0;
@@ -426,26 +546,59 @@ double RedeHidrologica::tempoConcentracaoKirpichModificadoAreaTotal(const QStrin
     const QVector<QString> ordem = ordemTopologica();
     if (ordem.isEmpty()) return 0.0;
 
-    // Acumula comprimento crítico e desnível crítico para obter declividade equivalente.
+    // Acumula comprimento crítico e declividade equivalente do caminho crítico.
     QMap<QString, double> comprimentoTalvegueCriticoPorId;
-    QMap<QString, double> desnivelCriticoPorId;
+    QMap<QString, double> declividadeEquivalenteCriticaPorId;
     QMap<QString, double> tempoConcentracaoPorId;
+
+    const auto textoTipo = [](TipoElementoRede tipo) {
+        switch (tipo) {
+        case TipoElementoRede::Canal: return QString("Canal");
+        case TipoElementoRede::BaciaContribuicao: return QString("BaciaContribuicao");
+        case TipoElementoRede::Bueiro: return QString("Bueiro");
+        case TipoElementoRede::Exutorio: return QString("Exutorio");
+        default: return QString("Outro");
+        }
+    };
+
+    qDebug() << "[TC][INICIO]" << "idAlvo=" << idAlvo;
 
     for (const QString& idAtual : ordem) {
         const QVector<QString> idsMontanteDireto = m_idsMontanteDiretoPorId.value(idAtual);
 
         double maiorComprimentoMontante = 0.0;
-        double desnivelDoMaiorMontante = 0.0;
+        double declividadeDoMaiorMontante = 0.0;
         for (const QString& idMontante : idsMontanteDireto) {
             const double comprimentoMontante = comprimentoTalvegueCriticoPorId.value(idMontante, 0.0);
             if (comprimentoMontante >= maiorComprimentoMontante) {
                 maiorComprimentoMontante = comprimentoMontante;
-                desnivelDoMaiorMontante = desnivelCriticoPorId.value(idMontante, 0.0);
+                declividadeDoMaiorMontante = declividadeEquivalenteCriticaPorId.value(idMontante, 0.0);
             }
         }
 
+        // Para o caminho Lmontante+Lcanal, desconsidera bacias locais ligadas diretamente ao canal.
+        double maiorComprimentoMontanteNaoBacia = 0.0;
+        double declividadeDoMaiorMontanteNaoBacia = 0.0;
+        for (const QString& idMontante : idsMontanteDireto) {
+            if (tipoDoElemento(idMontante) == TipoElementoRede::BaciaContribuicao) continue;
+
+            const double comprimentoMontante = comprimentoTalvegueCriticoPorId.value(idMontante, 0.0);
+            if (comprimentoMontante >= maiorComprimentoMontanteNaoBacia) {
+                maiorComprimentoMontanteNaoBacia = comprimentoMontante;
+                declividadeDoMaiorMontanteNaoBacia = declividadeEquivalenteCriticaPorId.value(idMontante, 0.0);
+            }
+        }
+
+        qDebug() << "[TC][MONTANTE]"
+                 << "id=" << idAtual
+                 << "tipo=" << textoTipo(tipoDoElemento(idAtual))
+                 << "maiorComprimentoMontante_km=" << maiorComprimentoMontante
+                 << "declividadeMaiorMontante=" << declividadeDoMaiorMontante
+                 << "maiorComprimentoMontanteNaoBacia_km=" << maiorComprimentoMontanteNaoBacia
+                 << "declividadeMaiorMontanteNaoBacia=" << declividadeDoMaiorMontanteNaoBacia;
+
         double comprimentoCriticoKm = maiorComprimentoMontante;
-        double desnivelCritico = desnivelDoMaiorMontante;
+        double declividadeEquivalenteCritica = declividadeDoMaiorMontante;
 
         if (tipoDoElemento(idAtual) == TipoElementoRede::BaciaContribuicao) {
             const BaciaContribuicao* bacia = baciaPorId(idAtual);
@@ -453,27 +606,36 @@ double RedeHidrologica::tempoConcentracaoKirpichModificadoAreaTotal(const QStrin
 
             const double comprimentoBaciaKm = std::max(0.0, bacia->comprimentoTalveguePrincipalKm());
             const double declividadeBacia = std::max(0.0, bacia->declividadeMedia());
-            const double desnivelBacia = comprimentoBaciaKm * declividadeBacia;
 
             if (comprimentoBaciaKm >= comprimentoCriticoKm) {
                 comprimentoCriticoKm = comprimentoBaciaKm;
-                desnivelCritico = desnivelBacia;
+                declividadeEquivalenteCritica = declividadeBacia;
             }
+
+            qDebug() << "[TC][BACIA]"
+                     << "id=" << idAtual
+                     << "comprimentoBacia_km=" << comprimentoBaciaKm
+                     << "declividadeBacia=" << declividadeBacia
+                     << "comprimentoCritico_km=" << comprimentoCriticoKm
+                     << "declividadeCritica=" << declividadeEquivalenteCritica;
         }
         else if (tipoDoElemento(idAtual) == TipoElementoRede::Canal) {
             const Canal* canal = canalPorId(idAtual);
             if (!canal) return 0.0;
 
             const double comprimentoCanalKm = std::max(0.0, canal->comprimento()) / 1000.0;
-            const double declividadeCanal = std::max(0.0, canal->declividadeFinal());
+            const double declividadeCanal = std::max(0.0, (canal->declividadeMinima() + canal->declividadeMaxima()) * 0.5);
 
             // Caminho 1: maior caminho de montante + canal completo.
-            const double comprimentoViaMontante = maiorComprimentoMontante + comprimentoCanalKm;
-            const double desnivelViaMontante = desnivelDoMaiorMontante + (declividadeCanal * comprimentoCanalKm);
+            const double comprimentoViaMontante = maiorComprimentoMontanteNaoBacia + comprimentoCanalKm;
+            const double declividadeViaMontante = (comprimentoViaMontante > 0.0)
+                                                    ? ((declividadeDoMaiorMontanteNaoBacia * maiorComprimentoMontanteNaoBacia) + (declividadeCanal * comprimentoCanalKm))
+                                                        / comprimentoViaMontante
+                                                    : 0.0;
 
-            // Caminho 2: bacia local ligada ao canal + metade do canal.
+            // Caminho 2 (comprimento crítico): sub-bacia local + metade do canal.
             double maiorComprimentoBaciaLocal = 0.0;
-            double desnivelBaciaLocal = 0.0;
+            double declividadeBaciaLocal = 0.0;
             for (const QString& idMontante : idsMontanteDireto) {
                 if (tipoDoElemento(idMontante) != TipoElementoRede::BaciaContribuicao) continue;
 
@@ -483,26 +645,54 @@ double RedeHidrologica::tempoConcentracaoKirpichModificadoAreaTotal(const QStrin
                 const double comprimentoBaciaKm = std::max(0.0, baciaLocal->comprimentoTalveguePrincipalKm());
                 if (comprimentoBaciaKm >= maiorComprimentoBaciaLocal) {
                     maiorComprimentoBaciaLocal = comprimentoBaciaKm;
-                    desnivelBaciaLocal = comprimentoBaciaKm * std::max(0.0, baciaLocal->declividadeMedia());
+                    declividadeBaciaLocal = std::max(0.0, baciaLocal->declividadeMedia());
                 }
             }
 
             const double comprimentoViaBaciaLocal = maiorComprimentoBaciaLocal + (comprimentoCanalKm * 0.5);
-            const double desnivelViaBaciaLocal = desnivelBaciaLocal + (declividadeCanal * comprimentoCanalKm * 0.5);
+
+            // Para Seq no caminho de sub-bacia, usa o comprimento total do canal.
+            const double comprimentoBaseSeqViaBaciaLocal = maiorComprimentoBaciaLocal + comprimentoCanalKm;
+            const double declividadeViaBaciaLocal = (comprimentoBaseSeqViaBaciaLocal > 0.0)
+                                                      ? ((declividadeBaciaLocal * maiorComprimentoBaciaLocal)
+                                                         + (declividadeCanal * comprimentoCanalKm))
+                                                          / comprimentoBaseSeqViaBaciaLocal
+                                                      : 0.0;
 
             if (comprimentoViaBaciaLocal > comprimentoViaMontante) {
                 comprimentoCriticoKm = comprimentoViaBaciaLocal;
-                desnivelCritico = desnivelViaBaciaLocal;
+                declividadeEquivalenteCritica = declividadeViaBaciaLocal;
+
+                qDebug() << "[TC][CANAL][ESCOLHA]"
+                         << "id=" << idAtual
+                         << "caminho=viaBaciaLocal"
+                         << "comprimentoViaBaciaLocal_km=" << comprimentoViaBaciaLocal
+                         << "declividadeViaBaciaLocal=" << declividadeViaBaciaLocal
+                         << "comprimentoViaMontante_km=" << comprimentoViaMontante
+                         << "declividadeViaMontante=" << declividadeViaMontante;
             }
             else {
                 comprimentoCriticoKm = comprimentoViaMontante;
-                desnivelCritico = desnivelViaMontante;
+                declividadeEquivalenteCritica = declividadeViaMontante;
+
+                qDebug() << "[TC][CANAL][ESCOLHA]"
+                         << "id=" << idAtual
+                         << "caminho=viaMontante"
+                         << "comprimentoViaMontante_km=" << comprimentoViaMontante
+                         << "declividadeViaMontante=" << declividadeViaMontante
+                         << "comprimentoViaBaciaLocal_km=" << comprimentoViaBaciaLocal
+                         << "declividadeViaBaciaLocal=" << declividadeViaBaciaLocal;
             }
+
+            qDebug() << "[TC][CANAL]"
+                     << "id=" << idAtual
+                     << "comprimentoCanal_km=" << comprimentoCanalKm
+                     << "declividadeCanal=" << declividadeCanal
+                     << "comprimentoCritico_km=" << comprimentoCriticoKm
+                     << "declividadeCritica=" << declividadeEquivalenteCritica;
         }
 
-        const double declividadeEquivalente = (comprimentoCriticoKm > 0.0)
-                                                ? std::max(0.0, desnivelCritico / comprimentoCriticoKm)
-                                                : 0.0;
+        const double declividadeEquivalente = std::max(0.0, declividadeEquivalenteCritica);
 
         const double tempoConcentracaoMin = calcularTempoKirpichModificado(
             comprimentoCriticoKm,
@@ -510,21 +700,30 @@ double RedeHidrologica::tempoConcentracaoKirpichModificadoAreaTotal(const QStrin
             0.0);
 
         comprimentoTalvegueCriticoPorId[idAtual] = comprimentoCriticoKm;
-        desnivelCriticoPorId[idAtual] = desnivelCritico;
-        tempoConcentracaoPorId[idAtual] = std::max(0.0, tempoConcentracaoMin);
+        declividadeEquivalenteCriticaPorId[idAtual] = declividadeEquivalente;
+        // Aplica Tc mínimo configurável na rede (ex.: 5 min).
+        tempoConcentracaoPorId[idAtual] = std::max(tempoConcentracaoMinimoMin(), std::max(0.0, tempoConcentracaoMin));
+
+        qDebug() << "[TC][RESULTADO_ID]"
+                 << "id=" << idAtual
+                 << "comprimentoCritico_km=" << comprimentoCriticoKm
+                 << "declividadeEquivalente=" << declividadeEquivalente
+                 << "tc_min=" << tempoConcentracaoPorId.value(idAtual);
     }
 
-    return tempoConcentracaoPorId.value(idAlvo, 0.0);
+    const double tcFinal = tempoConcentracaoPorId.value(idAlvo, 0.0);
+    qDebug() << "[TC][FIM]" << "idAlvo=" << idAlvo << "tcFinal_min=" << tcFinal;
+    return tcFinal;
 }
 
 double RedeHidrologica::calcularTempoKirpichModificado(double comprimentoTalvegueKm,
                                                        double declividadeTalvegue,
                                                        double maiorTempoConcentracaoMontanteMin) const
 {
-    const double comprimentoKm = std::max(1e-6, comprimentoTalvegueKm);
-    const double declividade = std::max(1e-6, declividadeTalvegue);
-    const double tcLocalMin = 57.0 * std::pow(comprimentoKm, 0.77) * std::pow(declividade, -0.385);
-    return std::max(std::max(0.0, maiorTempoConcentracaoMontanteMin), std::max(0.0, tcLocalMin));
+    return Hidrologia::calcularTcKirpichModificadoMin(
+        comprimentoTalvegueKm,
+        declividadeTalvegue,
+        maiorTempoConcentracaoMontanteMin);
 }
 
 QVector<QString> RedeHidrologica::idsMontanteDoElemento(const QString& idElemento) const

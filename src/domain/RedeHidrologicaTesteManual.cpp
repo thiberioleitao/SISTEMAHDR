@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <QQueue>
 #include <QStringList>
 
 bool RedeHidrologicaTesteManual::criarElementosExemplo(RedeHidrologica* rede)
@@ -240,7 +241,7 @@ QString RedeHidrologicaTesteManual::gerarRelatorioExemplo()
     const double lTotalExB1 = rede.calcularComprimentoTotalTalvegueAteElemento("EX-B1");
 
     // Parâmetros IDF para cálculo hidrológico.
-    const IDF idf(1200.0, 0.20, 0.80, 10.0);
+    const IDF idf(279.63, 0.00, 0.524, 0.00);
     const double tempoRetornoAnos = 50.0;
 
     auto idsBaciasContribuintes = [&](const QString& idElemento) {
@@ -251,22 +252,197 @@ QString RedeHidrologicaTesteManual::gerarRelatorioExemplo()
         return ids;
     };
 
-    auto calcularTcTotalMin = [&](const QString& idElemento) {
-        double tcTotalMin = 0.0;
-        const QVector<QString> idsContribuintes = idsBaciasContribuintes(idElemento);
+    struct DetalhesTcAcumulado
+    {
+        QMap<QString, double> comprimentoCriticoPorId;
+        QMap<QString, double> declividadeEquivalentePorId;
+        QMap<QString, double> comprimentoViaMontantePorCanal;
+        QMap<QString, double> comprimentoViaBaciaLocalPorCanal;
+        QMap<QString, double> declividadeViaMontantePorCanal;
+        QMap<QString, double> declividadeViaBaciaLocalPorCanal;
+        QMap<QString, double> comprimentoMontanteNaoBaciaPorCanal;
+        QMap<QString, double> declividadeMontanteNaoBaciaPorCanal;
+        QMap<QString, double> comprimentoBaciaLocalPorCanal;
+        QMap<QString, double> declividadeBaciaLocalPorCanal;
+        QMap<QString, double> declividadeCanalPorCanal;
+        QMap<QString, QString> caminhoSelecionadoPorCanal;
+    };
 
-        for (const QString& id : idsContribuintes) {
-            if (rede.tipoDoElemento(id) != TipoElementoRede::BaciaContribuicao) continue;
+    auto calcularDetalhesTcAcumulado = [&]() {
+        DetalhesTcAcumulado detalhes;
 
-            tcTotalMin = std::max(tcTotalMin, rede.tempoConcentracaoKirpichModificadoAreaTotal(id));
+        const QVector<QString> ids = rede.idsElementos();
+        QMap<QString, QString> jusantePorId;
+        QMap<QString, int> grauEntrada;
+
+        for (const QString& id : ids) {
+            jusantePorId[id] = rede.idJusanteDoElemento(id);
+            grauEntrada[id] = 0;
         }
 
-        return tcTotalMin;
+        for (const QString& id : ids) {
+            const QString idJusante = jusantePorId.value(id);
+            if (idJusante.isEmpty()) continue;
+            if (!grauEntrada.contains(idJusante)) continue;
+            grauEntrada[idJusante] += 1;
+        }
+
+        QQueue<QString> fila;
+        for (auto it = grauEntrada.cbegin(); it != grauEntrada.cend(); ++it) {
+            if (it.value() == 0) fila.enqueue(it.key());
+        }
+
+        QVector<QString> ordemTopologica;
+        while (!fila.isEmpty()) {
+            const QString idAtual = fila.dequeue();
+            ordemTopologica.append(idAtual);
+
+            const QString idJusante = jusantePorId.value(idAtual);
+            if (idJusante.isEmpty()) continue;
+
+            grauEntrada[idJusante] -= 1;
+            if (grauEntrada.value(idJusante) == 0) fila.enqueue(idJusante);
+        }
+
+        QMap<QString, QVector<QString>> idsMontanteDiretoPorId;
+        for (const QString& id : ids) {
+            idsMontanteDiretoPorId.insert(id, {});
+        }
+        for (const QString& id : ids) {
+            const QString idJusante = jusantePorId.value(id);
+            if (!idJusante.isEmpty() && idsMontanteDiretoPorId.contains(idJusante)) {
+                idsMontanteDiretoPorId[idJusante].append(id);
+            }
+        }
+
+        for (const QString& idAtual : ordemTopologica) {
+            const QVector<QString> idsMontanteDireto = idsMontanteDiretoPorId.value(idAtual);
+
+            double maiorComprimentoMontante = 0.0;
+            double declividadeDoMaiorMontante = 0.0;
+            for (const QString& idMontante : idsMontanteDireto) {
+                const double comprimentoMontante = detalhes.comprimentoCriticoPorId.value(idMontante, 0.0);
+                if (comprimentoMontante >= maiorComprimentoMontante) {
+                    maiorComprimentoMontante = comprimentoMontante;
+                    declividadeDoMaiorMontante = detalhes.declividadeEquivalentePorId.value(idMontante, 0.0);
+                }
+            }
+
+            // Para Lc1, desconsidera bacias locais diretas (elas entram em Lc2).
+            double maiorComprimentoMontanteNaoBacia = 0.0;
+            double declividadeDoMaiorMontanteNaoBacia = 0.0;
+            for (const QString& idMontante : idsMontanteDireto) {
+                if (rede.tipoDoElemento(idMontante) == TipoElementoRede::BaciaContribuicao) continue;
+
+                const double comprimentoMontante = detalhes.comprimentoCriticoPorId.value(idMontante, 0.0);
+                if (comprimentoMontante >= maiorComprimentoMontanteNaoBacia) {
+                    maiorComprimentoMontanteNaoBacia = comprimentoMontante;
+                    declividadeDoMaiorMontanteNaoBacia = detalhes.declividadeEquivalentePorId.value(idMontante, 0.0);
+                }
+            }
+
+            double comprimentoCriticoKm = maiorComprimentoMontante;
+            double declividadeEquivalenteCritica = declividadeDoMaiorMontante;
+
+            if (rede.tipoDoElemento(idAtual) == TipoElementoRede::BaciaContribuicao) {
+                const BaciaContribuicao* bacia = rede.baciaPorId(idAtual);
+                if (bacia) {
+                    const double comprimentoBaciaKm = std::max(0.0, bacia->comprimentoTalveguePrincipalKm());
+                    const double declividadeBacia = std::max(0.0, bacia->declividadeMedia());
+
+                    if (comprimentoBaciaKm >= comprimentoCriticoKm) {
+                        comprimentoCriticoKm = comprimentoBaciaKm;
+                        declividadeEquivalenteCritica = declividadeBacia;
+                    }
+                }
+            }
+            else if (rede.tipoDoElemento(idAtual) == TipoElementoRede::Canal) {
+                const Canal* canal = rede.canalPorId(idAtual);
+                if (canal) {
+                    const double comprimentoCanalKm = std::max(0.0, canal->comprimento()) / 1000.0;
+                    const double declividadeCanal = std::max(0.0, (canal->declividadeMinima() + canal->declividadeMaxima()) * 0.5);
+
+                    detalhes.comprimentoMontanteNaoBaciaPorCanal[idAtual] = maiorComprimentoMontanteNaoBacia;
+                    detalhes.declividadeMontanteNaoBaciaPorCanal[idAtual] = declividadeDoMaiorMontanteNaoBacia;
+                    detalhes.declividadeCanalPorCanal[idAtual] = declividadeCanal;
+
+                    const double comprimentoViaMontante = maiorComprimentoMontanteNaoBacia + comprimentoCanalKm;
+                    const double declividadeViaMontante = (comprimentoViaMontante > 0.0)
+                                                            ? ((declividadeDoMaiorMontanteNaoBacia * maiorComprimentoMontanteNaoBacia)
+                                                               + (declividadeCanal * comprimentoCanalKm))
+                                                                / comprimentoViaMontante
+                                                            : 0.0;
+
+                    double maiorComprimentoBaciaLocal = 0.0;
+                    double declividadeBaciaLocal = 0.0;
+                    for (const QString& idMontante : idsMontanteDireto) {
+                        if (rede.tipoDoElemento(idMontante) != TipoElementoRede::BaciaContribuicao) continue;
+
+                        const BaciaContribuicao* baciaLocal = rede.baciaPorId(idMontante);
+                        if (!baciaLocal) continue;
+
+                        const double comprimentoBaciaKm = std::max(0.0, baciaLocal->comprimentoTalveguePrincipalKm());
+                        if (comprimentoBaciaKm >= maiorComprimentoBaciaLocal) {
+                            maiorComprimentoBaciaLocal = comprimentoBaciaKm;
+                            declividadeBaciaLocal = std::max(0.0, baciaLocal->declividadeMedia());
+                        }
+                    }
+
+                    const double comprimentoViaBaciaLocal = maiorComprimentoBaciaLocal + (comprimentoCanalKm * 0.5);
+
+                    // Para Seq no caminho de sub-bacia, usa o comprimento total do canal.
+                    const double comprimentoBaseSeqViaBaciaLocal = maiorComprimentoBaciaLocal + comprimentoCanalKm;
+                    const double declividadeViaBaciaLocal = (comprimentoBaseSeqViaBaciaLocal > 0.0)
+                                                              ? ((declividadeBaciaLocal * maiorComprimentoBaciaLocal)
+                                                                 + (declividadeCanal * comprimentoCanalKm))
+                                                                  / comprimentoBaseSeqViaBaciaLocal
+                                                              : 0.0;
+
+                    detalhes.comprimentoViaMontantePorCanal[idAtual] = comprimentoViaMontante;
+                    detalhes.comprimentoViaBaciaLocalPorCanal[idAtual] = comprimentoViaBaciaLocal;
+                    detalhes.declividadeViaMontantePorCanal[idAtual] = declividadeViaMontante;
+                    detalhes.declividadeViaBaciaLocalPorCanal[idAtual] = declividadeViaBaciaLocal;
+                    detalhes.comprimentoBaciaLocalPorCanal[idAtual] = maiorComprimentoBaciaLocal;
+                    detalhes.declividadeBaciaLocalPorCanal[idAtual] = declividadeBaciaLocal;
+
+                    if (comprimentoViaBaciaLocal > comprimentoViaMontante) {
+                        comprimentoCriticoKm = comprimentoViaBaciaLocal;
+                        declividadeEquivalenteCritica = declividadeViaBaciaLocal;
+                        detalhes.caminhoSelecionadoPorCanal[idAtual] = "Lc2";
+                    }
+                    else {
+                        comprimentoCriticoKm = comprimentoViaMontante;
+                        declividadeEquivalenteCritica = declividadeViaMontante;
+                        detalhes.caminhoSelecionadoPorCanal[idAtual] = "Lc1";
+                    }
+                }
+            }
+
+            detalhes.comprimentoCriticoPorId[idAtual] = std::max(0.0, comprimentoCriticoKm);
+            detalhes.declividadeEquivalentePorId[idAtual] = std::max(0.0, declividadeEquivalenteCritica);
+        }
+
+        return detalhes;
     };
+
+    const DetalhesTcAcumulado detalhesTcAcumulado = calcularDetalhesTcAcumulado();
 
     auto formatarValor = [&](double valor, int casasDecimais) {
         if (!std::isfinite(valor)) return QString("n/d");
         return QString::number(valor, 'f', casasDecimais);
+    };
+
+    auto descreverSecaoCanal = [&](const Canal& canal) {
+        if (canal.tipoSecao() == TipoSecaoCanal::Semicircular) {
+            const double diametroM = std::max(0.0, canal.secaoSemicircular().diametro());
+            return QString("Semicircular(D=%1 m)").arg(diametroM, 0, 'f', 2);
+        }
+
+        const double larguraFundoM = std::max(0.0, canal.secaoTransversal().larguraFundo());
+        const double talude = std::max(0.0, canal.secaoTransversal().taludeLateral());
+        return QString("Trapezoidal(b=%1 m; m=%2)")
+            .arg(larguraFundoM, 0, 'f', 2)
+            .arg(talude, 0, 'f', 2);
     };
 
     // 5) Calcular parâmetros acumulados (Tc, áreas e comprimentos) via rede.
@@ -342,12 +518,29 @@ QString RedeHidrologicaTesteManual::gerarRelatorioExemplo()
         const Canal* canal = rede.canalPorId(id);
         if (!canal) continue;
 
-        const double tcCanalMin = calcularTcTotalMin(id);
+        const double tcCanalMin = rede.tempoConcentracaoKirpichModificadoAreaTotal(id);
         const double intensidadeCanalMmH = idf.intensidadeMmH(tempoRetornoAnos, tcCanalMin);
         const double qCanalM3s = std::max(0.0, vazaoAcumuladaTR50M3s.value(id, 0.0));
         const double cMedio = rede.coeficienteEscoamentoMedioPonderado(id);
         const double areaTotalKm2 = rede.areaAcumuladaTotalContribuinte(id);
-        const double lTotalTalvegueKm = rede.calcularComprimentoTotalTalvegueAteElemento(id);
+        // Ltotal do relatório hidrológico deve seguir o caminho crítico do Tc.
+        const double lTotalTalvegueKm = std::max(0.0, detalhesTcAcumulado.comprimentoCriticoPorId.value(id, 0.0));
+        const double areaTotalM2 = std::max(0.0, areaTotalKm2) * 1e6;
+        const double lTotalTalvegueM = std::max(0.0, lTotalTalvegueKm) * 1000.0;
+        const double declividadeEquivalente = detalhesTcAcumulado.declividadeEquivalentePorId.value(id, 0.0);
+        const double comprimentoViaMontanteKm = detalhesTcAcumulado.comprimentoViaMontantePorCanal.value(id, 0.0);
+        const double comprimentoViaBaciaLocalKm = detalhesTcAcumulado.comprimentoViaBaciaLocalPorCanal.value(id, 0.0);
+        const double declividadeViaMontante = detalhesTcAcumulado.declividadeViaMontantePorCanal.value(id, 0.0);
+        const double declividadeViaBaciaLocal = detalhesTcAcumulado.declividadeViaBaciaLocalPorCanal.value(id, 0.0);
+        const double comprimentoMontanteNaoBaciaKm = detalhesTcAcumulado.comprimentoMontanteNaoBaciaPorCanal.value(id, 0.0);
+        const double declividadeMontanteNaoBacia = detalhesTcAcumulado.declividadeMontanteNaoBaciaPorCanal.value(id, 0.0);
+        const double comprimentoBaciaLocalKm = detalhesTcAcumulado.comprimentoBaciaLocalPorCanal.value(id, 0.0);
+        const double declividadeBaciaLocal = detalhesTcAcumulado.declividadeBaciaLocalPorCanal.value(id, 0.0);
+        const double declividadeCanal = detalhesTcAcumulado.declividadeCanalPorCanal.value(id, 0.0);
+        const double declividadeFinalCanal = std::max(0.0, canal->declividadeFinal());
+        const QString caminhoSelecionado = detalhesTcAcumulado.caminhoSelecionadoPorCanal.value(id, "-");
+        const double comprimentoViaMontanteM = std::max(0.0, comprimentoViaMontanteKm) * 1000.0;
+        const double comprimentoViaBaciaLocalM = std::max(0.0, comprimentoViaBaciaLocalKm) * 1000.0;
 
         const double laminaProjetoM = canal->alturaLaminaParaVazaoProjeto(qCanalM3s);
 
@@ -359,17 +552,38 @@ QString RedeHidrologicaTesteManual::gerarRelatorioExemplo()
         canalSMax.setDeclividadeFinal(canal->declividadeMaxima());
         const double laminaSMaxM = canalSMax.alturaLaminaParaVazaoProjeto(qCanalM3s);
 
-        linhas << QString("- %1: Tc=%2 min | i=%3 mm/h | Q=%4 m3/s | Cmed=%5 | A_total=%6 km2 | Ltotal=%7 km | h_proj=%8 m | h_smin=%9 m | h_smax=%10 m")
-                     .arg(id)
-                     .arg(tcCanalMin, 0, 'f', 2)
-                     .arg(intensidadeCanalMmH, 0, 'f', 2)
-                     .arg(qCanalM3s, 0, 'f', 3)
-                     .arg(cMedio, 0, 'f', 3)
-                     .arg(areaTotalKm2, 0, 'f', 3)
-                     .arg(lTotalTalvegueKm, 0, 'f', 3)
-                     .arg(formatarValor(laminaProjetoM, 3))
-                     .arg(formatarValor(laminaSMinM, 3))
-                     .arg(formatarValor(laminaSMaxM, 3));
+        QString linhaCanal = QString("- %1: Tc=%2 min | i=%3 mm/h | Q=%4 m3/s | Cmed=%5 | A_total=%6 km2 | Ltotal=%7 km | Seq=%8 (%9%%) | A_total=%10 m2 | Ltotal=%11 m | Lc1(Lmont+Lcanal)=%12 m | Lc2(LSB+Lcanal/2)=%13 m | Lmont=%14 m | Smont=%15%% | LSB=%16 m | SSB=%17%% | Scanal=%18%% | Sfinal=%19%% | S_Lc1=%20%% | S_Lc2=%21%% | Caminho=%22 | h_proj=%23 m | h_smin=%24 m | h_smax=%25 m")
+                                .arg(id)
+                                .arg(tcCanalMin, 0, 'f', 2)
+                                .arg(intensidadeCanalMmH, 0, 'f', 2)
+                                .arg(qCanalM3s, 0, 'f', 3)
+                                .arg(cMedio, 0, 'f', 3)
+                                .arg(areaTotalKm2, 0, 'f', 3)
+                                .arg(lTotalTalvegueKm, 0, 'f', 3)
+                                .arg(declividadeEquivalente, 0, 'f', 5)
+                                .arg(declividadeEquivalente * 100.0, 0, 'f', 3)
+                                .arg(areaTotalM2, 0, 'f', 2)
+                                .arg(lTotalTalvegueM, 0, 'f', 2)
+                                .arg(comprimentoViaMontanteM, 0, 'f', 2)
+                                .arg(comprimentoViaBaciaLocalM, 0, 'f', 2)
+                                .arg(comprimentoMontanteNaoBaciaKm * 1000.0, 0, 'f', 2)
+                                .arg(declividadeMontanteNaoBacia * 100.0, 0, 'f', 3)
+                                .arg(comprimentoBaciaLocalKm * 1000.0, 0, 'f', 2)
+                                .arg(declividadeBaciaLocal * 100.0, 0, 'f', 3)
+                                .arg(declividadeCanal * 100.0, 0, 'f', 3)
+                                .arg(declividadeFinalCanal * 100.0, 0, 'f', 3)
+                                .arg(declividadeViaMontante * 100.0, 0, 'f', 3)
+                                .arg(declividadeViaBaciaLocal * 100.0, 0, 'f', 3)
+                                .arg(caminhoSelecionado)
+                                .arg(formatarValor(laminaProjetoM, 3))
+                                .arg(formatarValor(laminaSMinM, 3))
+                                .arg(formatarValor(laminaSMaxM, 3));
+
+        linhaCanal += QString(" | Secao=%1 | n=%2")
+                          .arg(descreverSecaoCanal(*canal))
+                          .arg(canal->coeficienteManning(), 0, 'f', 3);
+
+        linhas << linhaCanal;
     }
 
     linhas << "";

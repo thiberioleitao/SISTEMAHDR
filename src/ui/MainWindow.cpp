@@ -1,44 +1,204 @@
 #include "MainWindow.h"
 
-#include <QAbstractGraphicsShapeItem>
+#include "ui/delegates/DelegadoGeometriaSecaoComboBox.h"
+#include "ui/delegates/DelegadoSecaoTransversalComboBox.h"
+#include "ui/delegates/DelegadoUsoOcupacaoSoloComboBox.h"
+
+#include "domain/IDF.h"
+#include "domain/RedeHidrologica.h"
+
+#include "ui/modelos/ModeloTabelaBacias.h"
+#include "ui/modelos/ModeloTabelaCanais.h"
+#include "ui/modelos/ModeloTabelaSecoesTransversais.h"
+#include "ui/modelos/ModeloTabelaUsoOcupacaoSolo.h"
+
 #include <QAbstractItemView>
+#include <QAbstractItemModel>
 #include <QAction>
+#include <QApplication>
+#include <QClipboard>
 #include <QDockWidget>
-#include <QFrame>
-#include <QGraphicsEllipseItem>
-#include <QGraphicsPathItem>
-#include <QGraphicsPolygonItem>
-#include <QGraphicsRectItem>
-#include <QGraphicsScene>
-#include <QGraphicsSimpleTextItem>
-#include <QGraphicsView>
+#include <QFile>
+#include <QFileDialog>
 #include <QHeaderView>
+#include <QInputDialog>
+#include <QItemSelectionModel>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMenu>
-#include <QMenuBar>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPen>
-#include <QPoint>
+#include <QMessageBox>
+#include <QSet>
+#include <QStandardItem>
+#include <QStandardItemModel>
 #include <QStatusBar>
 #include <QStyle>
-#include <QTableWidget>
+#include <QShortcut>
+#include <QTabWidget>
+#include <QTableView>
 #include <QToolBar>
-#include <QTreeWidget>
-#include <QTreeWidgetItem>
+#include <QTreeView>
 #include <QVBoxLayout>
-#include <QWidget>
+
+#include <cmath>
 
 namespace
 {
-constexpr auto kRoleElementoId = Qt::UserRole + 1;
+constexpr auto kRoleTipoItem = Qt::UserRole + 1;
+constexpr auto kAbaInicial = "aba_inicial";
+constexpr auto kAbaSecoes = "aba_secoes";
+constexpr auto kAbaCanais = "aba_canais";
+constexpr auto kAbaBacias = "aba_bacias";
+constexpr auto kAbaUsoOcupacaoSolo = "aba_uso_ocupacao_solo";
+constexpr auto kAbaResultadosCanais = "aba_resultados_canais";
+constexpr auto kAbaResultadosCanaisDeclividadeMinima = "aba_resultados_canais_declividade_minima";
+constexpr auto kAbaResultadosCanaisDeclividadeMaxima = "aba_resultados_canais_declividade_maxima";
+constexpr auto kAbaResultadosCanaisDeclividadeFinal = "aba_resultados_canais_declividade_final";
+constexpr auto kAbaResultadosBacias = "aba_resultados_bacias";
 
-QPen criarPenPadrao(const QColor& cor, qreal largura)
+void configurarVisibilidadeColunasResultadosCanais(QTableView* tabela, const QString& modoDeclividade)
 {
-    QPen pen(cor, largura);
-    pen.setCapStyle(Qt::RoundCap);
-    pen.setJoinStyle(Qt::RoundJoin);
-    return pen;
+    if (!tabela || !tabela->model()) return;
+
+    // Colunas base comuns para todas as visões de resultados dos canais.
+    const QSet<int> colunasBase = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    QSet<int> colunasPermitidas = colunasBase;
+
+    if (modoDeclividade == "min") {
+        for (int coluna = 9; coluna <= 19; ++coluna) colunasPermitidas.insert(coluna);
+    }
+    else if (modoDeclividade == "max") {
+        for (int coluna = 20; coluna <= 30; ++coluna) colunasPermitidas.insert(coluna);
+    }
+    else if (modoDeclividade == "final") {
+        for (int coluna = 31; coluna <= 33; ++coluna) colunasPermitidas.insert(coluna);
+    }
+    else {
+        const int totalColunas = tabela->model()->columnCount();
+        for (int coluna = 0; coluna < totalColunas; ++coluna) {
+            tabela->setColumnHidden(coluna, false);
+        }
+        return;
+    }
+
+    const int totalColunas = tabela->model()->columnCount();
+    for (int coluna = 0; coluna < totalColunas; ++coluna) {
+        tabela->setColumnHidden(coluna, !colunasPermitidas.contains(coluna));
+    }
+}
+
+double alturaMaximaSecaoPorId(const QString& idSecao,
+                              const ModeloTabelaSecoesTransversais* modeloSecoes)
+{
+    if (!modeloSecoes) return 1.0;
+
+    const QString idAlvo = idSecao.trimmed();
+    const int totalLinhas = modeloSecoes->rowCount();
+    for (int linha = 0; linha < totalLinhas; ++linha) {
+        const QString idLinha = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaNomenclatura)
+                                    .data(Qt::DisplayRole)
+                                    .toString()
+                                    .trimmed();
+        if (idLinha.compare(idAlvo, Qt::CaseInsensitive) != 0) continue;
+
+        const QString geometria = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaGeometria)
+                                      .data(Qt::DisplayRole)
+                                      .toString();
+        if (geometria.contains("Semicircular", Qt::CaseInsensitive)) {
+            const double diametro = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaDiametro)
+                                         .data(Qt::DisplayRole)
+                                         .toString()
+                                         .toDouble();
+            return std::max(0.0, diametro);
+        }
+
+        return 1.0;
+    }
+
+    return 1.0;
+}
+
+double calcularFroude(double velocidade, double areaMolhada, double larguraSuperficial)
+{
+    if (velocidade <= 0.0 || areaMolhada <= 0.0 || larguraSuperficial <= 0.0) return 0.0;
+    const double profundidadeHidraulica = areaMolhada / larguraSuperficial;
+    if (profundidadeHidraulica <= 0.0) return 0.0;
+    constexpr double gravidade = 9.81;
+    return velocidade / std::sqrt(gravidade * profundidadeHidraulica);
+}
+
+double calcularTensaoCisalhantePa(double raioHidraulico, double declividade)
+{
+    if (raioHidraulico <= 0.0 || declividade <= 0.0) return 0.0;
+    constexpr double gammaAgua = 9810.0;
+    return gammaAgua * raioHidraulico * declividade;
+}
+
+bool aplicarSecaoTransversalNoCanal(Canal* canal,
+                                    const QString& idSecao,
+                                    const ModeloTabelaSecoesTransversais* modeloSecoes)
+{
+    if (!canal || !modeloSecoes) return false;
+
+    const QString idSecaoNormalizado = idSecao.trimmed();
+    if (idSecaoNormalizado.isEmpty()) return false;
+
+    const int totalLinhas = modeloSecoes->rowCount();
+    for (int linha = 0; linha < totalLinhas; ++linha) {
+        const QString idLinha = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaNomenclatura)
+                                    .data(Qt::DisplayRole)
+                                    .toString()
+                                    .trimmed();
+        if (idLinha.compare(idSecaoNormalizado, Qt::CaseInsensitive) != 0) continue;
+
+        const QString geometria = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaGeometria)
+                                      .data(Qt::DisplayRole)
+                                      .toString();
+
+        if (geometria.compare("Semicircular", Qt::CaseInsensitive) == 0) {
+            const double diametro = std::max(0.0,
+                modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaDiametro)
+                    .data(Qt::DisplayRole)
+                    .toString()
+                    .toDouble());
+
+            canal->setSecaoSemicircular(SecaoTransversalSemicircular(diametro));
+            if (canal->coeficienteManning() <= 0.0) {
+                canal->setCoeficienteManning(0.015);
+            }
+            return true;
+        }
+
+        const double larguraFundo = std::max(0.0,
+            modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaBaseMenor)
+                .data(Qt::DisplayRole)
+                .toString()
+                .toDouble());
+        const double taludeLateral = std::max(0.0,
+            modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaTalude)
+                .data(Qt::DisplayRole)
+                .toString()
+                .toDouble());
+
+        canal->setSecaoTransversal(SecaoTransversalTrapezoidal(larguraFundo, taludeLateral));
+        if (canal->coeficienteManning() <= 0.0) {
+            canal->setCoeficienteManning(0.025);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+double converterTextoParaNumeroCsv(QString texto)
+{
+    texto = texto.trimmed();
+    texto.remove('%');
+    texto.remove('"');
+    texto.replace(',', '.');
+    return texto.toDouble();
 }
 }
 
@@ -46,1429 +206,1767 @@ MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
     configurarJanela();
-    configurarCentro();
-    configurarArvoreRede();
-    configurarPainelPropriedades();
-    configurarMenuSuperior();
-    popularArvoreRede();
-    configurarCenaBase();
-    selecionarPrimeiroElemento();
+    configurarAreaCentral();
+    configurarArvoreModelo();
+
+    m_modeloSecoes = new ModeloTabelaSecoesTransversais(this);
+    m_modeloUsoOcupacaoSolo = new ModeloTabelaUsoOcupacaoSolo(this);
+    m_modeloCanais = new ModeloTabelaCanais(this);
+    m_modeloBacias = new ModeloTabelaBacias(this);
+    m_modeloResultadosCanais = new QStandardItemModel(this);
+    m_modeloResultadosBacias = new QStandardItemModel(this);
+    m_delegadoSecaoCanais = new DelegadoSecaoTransversalComboBox(m_modeloSecoes, this);
+    m_delegadoGeometriaSecoes = new DelegadoGeometriaSecaoComboBox(this);
+    m_delegadoUsoOcupacaoBacias = new DelegadoUsoOcupacaoSoloComboBox(m_modeloUsoOcupacaoSolo, this);
+
+    m_modeloBacias->definirModeloUsoOcupacaoSolo(m_modeloUsoOcupacaoSolo);
+
+    prepararModeloCanais();
+    prepararModeloBacias();
+    calcularResultadosModelo();
+
+    connect(m_modeloCanais, &ModeloTabelaCanais::dadosAlterados,
+            this,
+            [this]() {
+                calcularResultadosModelo();
+            });
+
+    connect(m_modeloBacias, &ModeloTabelaBacias::dadosAlterados,
+            this,
+            [this]() {
+                calcularResultadosModelo();
+            });
+
+    connect(m_modeloSecoes, &QAbstractItemModel::dataChanged,
+            this,
+            [this](const QModelIndex&, const QModelIndex&, const QList<int>&) {
+                calcularResultadosModelo();
+            });
+
+    connect(m_modeloSecoes, &QAbstractItemModel::modelReset,
+            this,
+            [this]() {
+                calcularResultadosModelo();
+            });
+
+    connect(m_modeloUsoOcupacaoSolo, &ModeloTabelaUsoOcupacaoSolo::dadosAlterados,
+            this,
+            [this]() {
+                m_modeloBacias->sincronizarCoeficienteRunoffPeloUsoOcupacao();
+                calcularResultadosModelo();
+            });
+
+    configurarAcoesProjeto();
+    configurarAcoesCalculo();
+
+    popularArvoreModelo();
 }
 
 void MainWindow::configurarJanela()
 {
-    setWindowTitle("SISTEMAHDR - Explorador de Rede Hidrologica");
-    resize(1520, 860);
-    setDockOptions(QMainWindow::AnimatedDocks | QMainWindow::AllowNestedDocks);
-    statusBar()->showMessage("Projeto pronto para edicao.");
-}
-
-void MainWindow::configurarMenuSuperior()
-{
-    auto* menuArquivo = menuBar()->addMenu("Arquivo");
-    auto* menuView = menuBar()->addMenu("Exibir");
-    auto* menuProject = menuBar()->addMenu("Projeto");
-    auto* menuComponents = menuBar()->addMenu("Componentes");
-    auto* menuTools = menuBar()->addMenu("Ferramentas");
-    auto* menuWindow = menuBar()->addMenu("Janela");
-    auto* menuHelp = menuBar()->addMenu("Ajuda");
-
-    auto* acaoNovoProjeto = new QAction(style()->standardIcon(QStyle::SP_FileIcon), "Novo Projeto...", this);
-    acaoNovoProjeto->setShortcut(QKeySequence("Ctrl+Shift+N"));
-    connect(acaoNovoProjeto, &QAction::triggered, this, [this]() {
-        statusBar()->showMessage("Acao Novo Projeto acionada.", 4000);
-    });
-
-    auto* acaoAbrirProjeto = new QAction(style()->standardIcon(QStyle::SP_DialogOpenButton), "Abrir Projeto...", this);
-    acaoAbrirProjeto->setShortcut(QKeySequence("Ctrl+Shift+O"));
-    connect(acaoAbrirProjeto, &QAction::triggered, this, [this]() {
-        statusBar()->showMessage("Acao Abrir Projeto acionada.", 4000);
-    });
-
-    auto* acaoSalvarProjeto = new QAction(style()->standardIcon(QStyle::SP_DialogSaveButton), "Salvar Projeto", this);
-    acaoSalvarProjeto->setShortcut(QKeySequence::Save);
-    connect(acaoSalvarProjeto, &QAction::triggered, this, [this]() {
-        statusBar()->showMessage("Projeto salvo (acao base da interface).", 4000);
-    });
-
-    auto* acaoSalvarComo = new QAction(style()->standardIcon(QStyle::SP_DialogSaveButton), "Salvar Projeto Como...", this);
-    acaoSalvarComo->setShortcut(QKeySequence("Ctrl+Shift+S"));
-    connect(acaoSalvarComo, &QAction::triggered, this, [this]() {
-        statusBar()->showMessage("Acao Salvar Como acionada.", 4000);
-    });
-
-    auto* acaoSair = new QAction(style()->standardIcon(QStyle::SP_TitleBarCloseButton), "Sair", this);
-    acaoSair->setShortcut(QKeySequence::Quit);
-    connect(acaoSair, &QAction::triggered, this, &QWidget::close);
-
-    menuArquivo->addAction(acaoNovoProjeto);
-    menuArquivo->addAction(acaoAbrirProjeto);
-    menuArquivo->addSeparator();
-    menuArquivo->addAction(acaoSalvarProjeto);
-    menuArquivo->addAction(acaoSalvarComo);
-    menuArquivo->addSeparator();
-    menuArquivo->addAction(acaoSair);
-
-    auto* acaoAlternarExplorador = m_dockRede ? m_dockRede->toggleViewAction() : new QAction("Explorador do Projeto", this);
-    acaoAlternarExplorador->setText("Explorador do Projeto");
-    menuView->addAction(acaoAlternarExplorador);
-
-    auto* acaoAlternarPropriedades = m_dockPropriedades ? m_dockPropriedades->toggleViewAction() : new QAction("Propriedades", this);
-    acaoAlternarPropriedades->setText("Propriedades");
-    menuView->addAction(acaoAlternarPropriedades);
-
-    auto* acaoGerenciarProjeto = new QAction("Configuracoes do Projeto", this);
-    connect(acaoGerenciarProjeto, &QAction::triggered, this, [this]() {
-        statusBar()->showMessage("Configuracoes de projeto em preparacao.", 4000);
-    });
-    menuProject->addAction(acaoGerenciarProjeto);
-
-    auto* submenuCriarComponente = menuComponents->addMenu("Criar Componente");
-    auto adicionarAcaoComponente = [&](const QString& texto) {
-        auto* acao = new QAction(texto, this);
-        connect(acao, &QAction::triggered, this, [this, texto]() {
-            statusBar()->showMessage(QString("Componente '%1' solicitado.").arg(texto), 4000);
-        });
-        submenuCriarComponente->addAction(acao);
-    };
-
-    adicionarAcaoComponente("Dados Pluviometricos");
-    adicionarAcaoComponente("Analise e Cadastro de IDFs");
-    adicionarAcaoComponente("Hidrologia e Perdas");
-    adicionarAcaoComponente("Geometria e Topologia");
-    adicionarAcaoComponente("Estruturas Hidraulicas");
-    adicionarAcaoComponente("Resumos e Relatorios");
-
-    auto* acaoFerramentas = new QAction("Catalogo de Ferramentas", this);
-    connect(acaoFerramentas, &QAction::triggered, this, [this]() {
-        statusBar()->showMessage("Catalogo de ferramentas em preparacao.", 4000);
-    });
-    menuTools->addAction(acaoFerramentas);
-
-    auto* acaoOrganizarJanelas = new QAction("Restaurar Layout", this);
-    connect(acaoOrganizarJanelas, &QAction::triggered, this, [this]() {
-        statusBar()->showMessage("Layout restaurado para o padrao.", 4000);
-        if (m_dockRede) {
-            m_dockRede->show();
-        }
-        if (m_dockPropriedades) {
-            m_dockPropriedades->show();
-        }
-    });
-    menuWindow->addAction(acaoOrganizarJanelas);
-
-    auto* acaoAjuda = new QAction("Sobre a Interface", this);
-    connect(acaoAjuda, &QAction::triggered, this, [this]() {
-        statusBar()->showMessage("Base de interface inspirada em RMC BestFit e HEC.", 4000);
-    });
-    menuHelp->addAction(acaoAjuda);
-
-    auto* barraPrincipal = addToolBar("Projeto");
-    barraPrincipal->setMovable(false);
-    barraPrincipal->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    barraPrincipal->addAction(acaoNovoProjeto);
-    barraPrincipal->addAction(acaoAbrirProjeto);
-    barraPrincipal->addSeparator();
-    barraPrincipal->addAction(acaoSalvarProjeto);
-    barraPrincipal->addSeparator();
-    barraPrincipal->addAction(acaoSair);
-}
-
-void MainWindow::configurarCentro()
-{
-    auto* paginaCentral = new QWidget(this);
-    auto* layoutPrincipal = new QVBoxLayout(paginaCentral);
-    layoutPrincipal->setContentsMargins(0, 0, 0, 0);
-    layoutPrincipal->setSpacing(0);
-
-    auto* cabecalho = new QFrame(paginaCentral);
-    cabecalho->setObjectName("painelCabecalho");
-    auto* layoutCabecalho = new QVBoxLayout(cabecalho);
-    layoutCabecalho->setContentsMargins(18, 14, 18, 14);
-    layoutCabecalho->setSpacing(4);
-
-    m_tituloCentro = new QLabel("Mapa da rede", cabecalho);
-    m_tituloCentro->setObjectName("tituloCentro");
-
-    m_subtituloCentro = new QLabel("Selecione um elemento na arvore para destacar a geometria e os atributos na cena.", cabecalho);
-    m_subtituloCentro->setObjectName("subtituloCentro");
-    m_subtituloCentro->setWordWrap(true);
-
-    layoutCabecalho->addWidget(m_tituloCentro);
-    layoutCabecalho->addWidget(m_subtituloCentro);
-
-    m_cenaRede = new QGraphicsScene(paginaCentral);
-    m_viewRede = new QGraphicsView(m_cenaRede, paginaCentral);
-    m_viewRede->setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing | QPainter::SmoothPixmapTransform);
-    m_viewRede->setDragMode(QGraphicsView::ScrollHandDrag);
-    m_viewRede->setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
-    m_viewRede->setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
-    m_viewRede->setResizeAnchor(QGraphicsView::AnchorViewCenter);
-    m_viewRede->setBackgroundBrush(QColor("#edf3f8"));
-    m_viewRede->setFrameShape(QFrame::NoFrame);
-
-    layoutPrincipal->addWidget(cabecalho);
-    layoutPrincipal->addWidget(m_viewRede, 1);
-
-    setCentralWidget(paginaCentral);
+    setWindowTitle("SISTEMAHDR - Modelo Hidrol\u00F3gico");
+    resize(1280, 780);
+    statusBar()->showMessage("Selecione um item em Dados ou Resultados na \u00E1rvore lateral.");
 
     setStyleSheet(
-        "QMainWindow { background: #dfe6ee; }"
-        "QMenuBar { background: #f3f6fa; border-bottom: 1px solid #c8d3df; }"
-        "QMenuBar::item:selected { background: #d7e6f6; }"
-        "QToolBar { background: #eef4fa; border-bottom: 1px solid #c8d3df; spacing: 6px; padding: 4px; }"
-        "QDockWidget { font-size: 12px; }"
+        "QMainWindow { background: #eef3f7; }"
         "QDockWidget::title { background: #1f4e79; color: white; padding: 8px 10px; }"
-        "QTreeWidget, QTableWidget { background: #f7f9fc; border: 1px solid #c8d3df; }"
-        "QTreeWidget::item:selected { background: #cfe3f6; color: #10253f; }"
-        "QHeaderView::section { background: #e8eef5; padding: 6px; border: none; border-bottom: 1px solid #c8d3df; }"
-        "QFrame#painelCabecalho { background: #eef4fa; border-bottom: 1px solid #c7d5e3; }"
-        "QLabel#tituloCentro { font-size: 20px; font-weight: 600; color: #143a5a; }"
-        "QLabel#subtituloCentro { color: #4d647a; }");
+        "QTreeView, QTableView { background: white; border: 1px solid #c9d4df; }"
+        "QTreeView::item:selected { background: #d7e8f7; color: #0f2f4a; }"
+        "QTabWidget::pane { border: 1px solid #c9d4df; background: white; }"
+        "QTabBar::tab { background: #dfe8f1; padding: 8px 14px; margin-right: 2px; }"
+        "QTabBar::tab:selected { background: white; color: #143a5a; font-weight: 600; }"
+        "QHeaderView::section { background: #ebf1f6; padding: 6px; border: none; border-bottom: 1px solid #c9d4df; }");
 }
 
-void MainWindow::configurarArvoreRede()
+void MainWindow::configurarAreaCentral()
 {
-    m_dockRede = new QDockWidget("Explorador do Projeto", this);
-    m_dockRede->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    m_dockRede->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    m_abasCentrais = new QTabWidget(this);
+    m_abasCentrais->setTabsClosable(true);
+    m_abasCentrais->setDocumentMode(true);
 
-    m_arvoreRede = new QTreeWidget(m_dockRede);
-    m_arvoreRede->setColumnCount(1);
-    m_arvoreRede->setHeaderLabel("Itens do projeto");
-    m_arvoreRede->setAlternatingRowColors(true);
-    m_arvoreRede->setUniformRowHeights(true);
-    m_arvoreRede->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_paginaInicial = new QWidget(m_abasCentrais);
+    auto* layoutInicial = new QVBoxLayout(m_paginaInicial);
+    layoutInicial->setContentsMargins(32, 32, 32, 32);
+    layoutInicial->setSpacing(10);
 
-    connect(m_arvoreRede, &QTreeWidget::currentItemChanged, this,
-            [this](QTreeWidgetItem* atual, QTreeWidgetItem*) {
-                aplicarSelecao(atual);
+    auto* titulo = new QLabel("Modelo 1", m_paginaInicial);
+    titulo->setStyleSheet("font-size: 24px; font-weight: 600; color: #143a5a;");
+
+    auto* descricao = new QLabel(
+        "Use a \u00E1rvore lateral para abrir os grupos Dados e Resultados. "
+        "A edi\u00E7\u00E3o e apresenta\u00E7\u00E3o seguem a arquitetura model/view.",
+        m_paginaInicial);
+    descricao->setWordWrap(true);
+    descricao->setStyleSheet("font-size: 14px; color: #4f6375;");
+
+    layoutInicial->addWidget(titulo);
+    layoutInicial->addWidget(descricao);
+    layoutInicial->addStretch();
+
+    m_abasCentrais->addTab(m_paginaInicial, "In\u00EDcio");
+    m_abasCentrais->widget(0)->setProperty("tabKey", kAbaInicial);
+
+    connect(m_abasCentrais, &QTabWidget::tabCloseRequested, this, [this](int indice) {
+        QWidget* pagina = m_abasCentrais->widget(indice);
+        if (pagina == m_paginaInicial) return;
+        if (!pagina) return;
+
+        const QString chave = pagina->property("tabKey").toString();
+        m_tabelaPorChave.remove(chave);
+
+        m_abasCentrais->removeTab(indice);
+        pagina->deleteLater();
+    });
+
+    setCentralWidget(m_abasCentrais);
+}
+
+void MainWindow::configurarArvoreModelo()
+{
+    m_dockModelo = new QDockWidget("Modelo", this);
+    m_dockModelo->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    m_dockModelo->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+
+    m_arvoreModelo = new QTreeView(m_dockModelo);
+    m_arvoreModelo->setAlternatingRowColors(true);
+    m_arvoreModelo->setUniformRowHeights(true);
+
+    m_modeloArvore = new QStandardItemModel(this);
+    m_modeloArvore->setHorizontalHeaderLabels({ "Estrutura do modelo" });
+    m_arvoreModelo->setModel(m_modeloArvore);
+    m_arvoreModelo->setContextMenuPolicy(Qt::CustomContextMenu);
+
+    connect(m_arvoreModelo->selectionModel(), &QItemSelectionModel::currentChanged,
+            this,
+            [this](const QModelIndex& atual, const QModelIndex&) {
+                abrirAbaParaIndice(atual);
             });
 
-    connect(m_arvoreRede, &QWidget::customContextMenuRequested, this,
+    connect(m_arvoreModelo, &QWidget::customContextMenuRequested,
+            this,
             [this](const QPoint& posicao) {
                 mostrarMenuContextoArvore(posicao);
             });
 
-    m_dockRede->setWidget(m_arvoreRede);
-    addDockWidget(Qt::LeftDockWidgetArea, m_dockRede);
+    m_dockModelo->setWidget(m_arvoreModelo);
+    addDockWidget(Qt::LeftDockWidgetArea, m_dockModelo);
 }
 
-void MainWindow::configurarPainelPropriedades()
+void MainWindow::popularArvoreModelo()
 {
-    m_dockPropriedades = new QDockWidget("Propriedades", this);
-    m_dockPropriedades->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    m_dockPropriedades->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    m_modeloArvore->removeRows(0, m_modeloArvore->rowCount());
 
-    auto* conteudo = new QWidget(m_dockPropriedades);
-    auto* layout = new QVBoxLayout(conteudo);
-    layout->setContentsMargins(10, 10, 10, 10);
-    layout->setSpacing(8);
+    QStandardItem* raiz = criarItemArvore(
+        m_modeloArvore->invisibleRootItem(),
+        "Modelo 1",
+        "modelo",
+        style()->standardIcon(QStyle::SP_DirHomeIcon));
 
-    auto* titulo = new QLabel("Atributos do elemento selecionado", conteudo);
-    titulo->setStyleSheet("font-weight: 600; color: #143a5a;");
+    QStandardItem* itemDados = criarItemArvore(
+        raiz,
+        "Dados",
+        "dados",
+        style()->standardIcon(QStyle::SP_DirIcon));
 
-    m_tabelaPropriedades = new QTableWidget(conteudo);
-    m_tabelaPropriedades->setColumnCount(2);
-    m_tabelaPropriedades->setHorizontalHeaderLabels(QStringList() << "Propriedade" << "Valor");
-    m_tabelaPropriedades->horizontalHeader()->setStretchLastSection(true);
-    m_tabelaPropriedades->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    m_tabelaPropriedades->verticalHeader()->setVisible(false);
-    m_tabelaPropriedades->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_tabelaPropriedades->setSelectionMode(QAbstractItemView::NoSelection);
-    m_tabelaPropriedades->setFocusPolicy(Qt::NoFocus);
-    m_tabelaPropriedades->setAlternatingRowColors(true);
+    criarItemArvore(itemDados, "Se\u00E7\u00F5es transversais", "secoes", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    criarItemArvore(itemDados, "Canais", "canais", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    criarItemArvore(itemDados, "Bacias", "bacias", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    criarItemArvore(itemDados, "Uso e ocupa\u00E7\u00E3o do solo", "uso_ocupacao_solo", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
 
-    layout->addWidget(titulo);
-    layout->addWidget(m_tabelaPropriedades, 1);
+    QStandardItem* itemResultados = criarItemArvore(
+        raiz,
+        "Resultados",
+        "resultados",
+        style()->standardIcon(QStyle::SP_DirIcon));
 
-    m_dockPropriedades->setWidget(conteudo);
-    addDockWidget(Qt::RightDockWidgetArea, m_dockPropriedades);
-}
+    QStandardItem* itemResultadosCanais = criarItemArvore(itemResultados, "Canais", "resultados_canais", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    criarItemArvore(itemResultados, "Bacias", "resultados_bacias", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
 
-void MainWindow::configurarCenaBase()
-{
-    m_cenaRede->clear();
-    m_itensCena.clear();
-
-    const QRectF extensaoCena(0.0, 0.0, 1180.0, 720.0);
-    m_cenaRede->setSceneRect(extensaoCena);
-
-    QPen gradePen(QColor("#d7e1ea"));
-    gradePen.setWidthF(1.0);
-
-    for (qreal x = extensaoCena.left(); x <= extensaoCena.right(); x += 80.0) {
-        m_cenaRede->addLine(x, extensaoCena.top(), x, extensaoCena.bottom(), gradePen);
+    if (itemResultadosCanais) {
+        criarItemArvore(itemResultadosCanais, "Declividade m\u00EDnima", "resultados_canais_declividade_minima", style()->standardIcon(QStyle::SP_FileDialogInfoView));
+        criarItemArvore(itemResultadosCanais, "Declividade m\u00E1xima", "resultados_canais_declividade_maxima", style()->standardIcon(QStyle::SP_FileDialogInfoView));
+        criarItemArvore(itemResultadosCanais, "Declividade final", "resultados_canais_declividade_final", style()->standardIcon(QStyle::SP_FileDialogInfoView));
+        m_arvoreModelo->expand(itemResultadosCanais->index());
     }
 
-    for (qreal y = extensaoCena.top(); y <= extensaoCena.bottom(); y += 80.0) {
-        m_cenaRede->addLine(extensaoCena.left(), y, extensaoCena.right(), y, gradePen);
-    }
-
-    auto* areaTecnica = m_cenaRede->addRect(
-        QRectF(80.0, 70.0, 980.0, 560.0),
-        criarPenPadrao(QColor("#bfd0df"), 2.0),
-        QBrush(QColor("#f9fcff")));
-    areaTecnica->setZValue(-10.0);
-
-    auto* tituloMapa = m_cenaRede->addSimpleText("Cena base da geometria");
-    tituloMapa->setBrush(QColor("#163e63"));
-    tituloMapa->setPos(104.0, 86.0);
-
-    auto* faixaCanal = new QGraphicsPathItem();
-    QPainterPath caminhoCanal(QPointF(240.0, 250.0));
-    caminhoCanal.cubicTo(QPointF(360.0, 240.0), QPointF(470.0, 260.0), QPointF(570.0, 310.0));
-    caminhoCanal.cubicTo(QPointF(650.0, 350.0), QPointF(750.0, 390.0), QPointF(920.0, 430.0));
-    faixaCanal->setPath(caminhoCanal);
-    faixaCanal->setPen(criarPenPadrao(QColor("#7fa7c9"), 26.0));
-    faixaCanal->setZValue(-2.0);
-    m_cenaRede->addItem(faixaCanal);
-
-    auto* eixoCanal = new QGraphicsPathItem(caminhoCanal);
-    eixoCanal->setPen(criarPenPadrao(QColor("#255d8d"), 5.0));
-    eixoCanal->setZValue(-1.0);
-    m_cenaRede->addItem(eixoCanal);
-
-    auto adicionarRotulo = [&](const QString& texto, const QPointF& posicao) {
-        auto* rotulo = m_cenaRede->addSimpleText(texto);
-        rotulo->setBrush(QColor("#274966"));
-        rotulo->setPos(posicao);
-        return rotulo;
-    };
-
-    auto* baciaMontante = new QGraphicsPolygonItem(
-        QPolygonF({QPointF(160.0, 140.0), QPointF(320.0, 120.0), QPointF(390.0, 220.0), QPointF(280.0, 300.0), QPointF(140.0, 240.0)}));
-    baciaMontante->setBrush(QColor("#d9ead3"));
-    baciaMontante->setPen(criarPenPadrao(QColor("#5c8c59"), 3.0));
-    m_cenaRede->addItem(baciaMontante);
-    m_itensCena.insert("bacia_montante", baciaMontante);
-    adicionarRotulo("Bacia Montante", QPointF(190.0, 150.0));
-
-    auto* baciaLeste = new QGraphicsPolygonItem(
-        QPolygonF({QPointF(520.0, 170.0), QPointF(680.0, 150.0), QPointF(750.0, 250.0), QPointF(640.0, 320.0), QPointF(500.0, 250.0)}));
-    baciaLeste->setBrush(QColor("#e6efcf"));
-    baciaLeste->setPen(criarPenPadrao(QColor("#829c58"), 3.0));
-    m_cenaRede->addItem(baciaLeste);
-    m_itensCena.insert("bacia_leste", baciaLeste);
-    adicionarRotulo("Bacia Leste", QPointF(560.0, 180.0));
-
-    auto* canalPrincipal = new QGraphicsRectItem(QRectF(350.0, 275.0, 280.0, 72.0));
-    canalPrincipal->setBrush(QColor("#f3c77a"));
-    canalPrincipal->setPen(criarPenPadrao(QColor("#b66f15"), 3.0));
-    m_cenaRede->addItem(canalPrincipal);
-    m_itensCena.insert("canal_principal", canalPrincipal);
-    adicionarRotulo("Canal Principal", QPointF(404.0, 293.0));
-
-    auto* trechoJusante = new QGraphicsRectItem(QRectF(650.0, 345.0, 260.0, 68.0));
-    trechoJusante->setBrush(QColor("#f6d59b"));
-    trechoJusante->setPen(criarPenPadrao(QColor("#bd7f2d"), 3.0));
-    m_cenaRede->addItem(trechoJusante);
-    m_itensCena.insert("trecho_jusante", trechoJusante);
-    adicionarRotulo("Trecho Jusante", QPointF(705.0, 362.0));
-
-    auto* estruturaSaida = new QGraphicsEllipseItem(QRectF(920.0, 390.0, 72.0, 72.0));
-    estruturaSaida->setBrush(QColor("#f2b4b4"));
-    estruturaSaida->setPen(criarPenPadrao(QColor("#9b3434"), 3.0));
-    m_cenaRede->addItem(estruturaSaida);
-    m_itensCena.insert("estrutura_saida", estruturaSaida);
-    adicionarRotulo("Estrutura de Saida", QPointF(860.0, 472.0));
-
-    m_viewRede->fitInView(areaTecnica->sceneBoundingRect().adjusted(-30.0, -30.0, 30.0, 30.0), Qt::KeepAspectRatio);
+    m_arvoreModelo->expand(raiz->index());
+    m_arvoreModelo->expand(itemDados->index());
+    m_arvoreModelo->expand(itemResultados->index());
 }
 
-void MainWindow::popularArvoreRede()
+void MainWindow::abrirAbaParaIndice(const QModelIndex& indice)
 {
-    m_arvoreRede->clear();
-    m_elementos.clear();
+    if (!indice.isValid()) return;
 
-    const QVector<ElementoApresentacao> elementos = {
-        {
-            "projeto_raiz",
-            "Projeto Exemplo - Dimensionamento HDR",
-            "Projeto",
-            "Macroestrutura inspirada na planilha de dimensionamento, organizada por entradas, hidrologia, geometria, estruturas e resumos.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Projeto"},
-                {"Planilha base", "DIMENSIONAMENTO (V2026.03.12).xlsm"},
-                {"Estrutura", "Pluviometria, IDFs, hidrologia, geometria, estruturas e resumos"},
-                {"Sistema de unidades", "SI"}
-            }
-        },
-        {
-            "pluviometria_idf",
-            "Pluviometria e IDFs",
-            "Macrocomponente",
-            "Entradas pluviometricas, isozonas, regressoes e analise de curvas IDF.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Macrocomponente"},
-                {"Abas base", "P1dia, isozonas, regressoes, ANALISE IDFS, IDFS"},
-                {"Uso", "Definicao das chuvas de projeto"}
-            }
-        },
-        {
-            "chuvas_base",
-            "Chuvas base",
-            "Grupo de planilhas",
-            "Fontes basicas de precipitacao e periodos de retorno.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Grupo de planilhas"},
-                {"Abas", "P1dia, Taborga_1974, Isozonas_2016 e correlatas"}
-            }
-        },
-        {
-            "aba_p1dia",
-            "P1dia",
-            "Planilha",
-            "Tabela base de precipitacao versus periodo de retorno e probabilidade anual de excedencia.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Conteudo", "Periodo de retorno, AEP e precipitacao"},
-                {"Funcao", "Entrada primaria de chuva"}
-            }
-        },
-        {
-            "aba_taborga_1974",
-            "Taborga_1974",
-            "Planilha",
-            "Referencia historica de apoio para tratamento pluviometrico e regionalizacao.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Categoria", "Referencia pluviometrica historica"}
-            }
-        },
-        {
-            "aba_reg_iso_1974",
-            "Reg_Isozonas_1974",
-            "Planilha",
-            "Regressoes associadas ao conjunto de isozonas de 1974.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Categoria", "Regressao de isozonas"}
-            }
-        },
-        {
-            "aba_isozonas_2016",
-            "Isozonas_2016",
-            "Planilha",
-            "Base de isozonas atualizada para apoio a intensidade e precipitacao regional.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Categoria", "Isozonas"}
-            }
-        },
-        {
-            "aba_reg_iso_2016",
-            "Reg_Isozonas_2016",
-            "Planilha",
-            "Regressoes associadas ao conjunto de isozonas de 2016.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Categoria", "Regressao de isozonas"}
-            }
-        },
-        {
-            "aba_regressao_1957",
-            "Regressao_,_1957",
-            "Planilha",
-            "Regressao historica complementar utilizada como referencia na construcao das entradas.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Categoria", "Base historica"}
-            }
-        },
-        {
-            "analise_idfs",
-            "Analise de IDFs",
-            "Grupo de planilhas",
-            "Planilhas voltadas para calibracao, analise e cadastro de curvas IDF.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Grupo de planilhas"},
-                {"Abas", "ANALISE IDFS e IDFS"}
-            }
-        },
-        {
-            "aba_analise_idfs",
-            "ANALISE IDFS",
-            "Planilha",
-            "Comparacao entre metodologias, isozonas e parametros K, m, c e n das IDFs.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Campos-chave", "Tempo de retorno, K, m, c, n, I(mm/h), Ptotal(mm)"},
-                {"Funcao", "Analise comparativa de IDFs"}
-            }
-        },
-        {
-            "aba_idfs",
-            "IDFS",
-            "Planilha",
-            "Cadastro consolidado das curvas IDF disponiveis para uso no dimensionamento.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Campos-chave", "ID-IDF, Nome, TR, K, m, c, n"},
-                {"Funcao", "Base de curvas para chuva de projeto"}
-            }
-        },
-        {
-            "hidrologia_perdas",
-            "Hidrologia e perdas",
-            "Macrocomponente",
-            "Modelos de chuva efetiva, coeficientes equivalentes e perda de solo.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Macrocomponente"},
-                {"Abas base", "SCS-CN, C_EQUIVALENTE, RUSLE, CURVAS"}
-            }
-        },
-        {
-            "aba_scs_cn_pefetiva",
-            "SCS-CN-P_EFETIVA",
-            "Planilha",
-            "Calculo da precipitacao efetiva pelo metodo SCS-CN.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Campos-chave", "Duracao, TR, Ptotal, Ia, CN, S, Pef"},
-                {"Funcao", "Chuva efetiva"}
-            }
-        },
-        {
-            "aba_c_equivalente",
-            "C_EQUIVALENTE",
-            "Planilha",
-            "Consolidacao de coeficientes de escoamento equivalentes.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Coeficientes equivalentes para metodo racional"}
-            }
-        },
-        {
-            "aba_scs_cn_c",
-            "SCS-CN-C",
-            "Planilha",
-            "Parametros hidrologicos auxiliares e coeficientes complementares do metodo SCS-CN.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Parametros complementares de infiltracao"}
-            }
-        },
-        {
-            "aba_rusle",
-            "RUSLE",
-            "Planilha",
-            "Estimativa de perda de solo associada as bacias.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Perda de solo e sedimentacao"}
-            }
-        },
-        {
-            "aba_curvas",
-            "CURVAS",
-            "Planilha",
-            "Curvas e referencias auxiliares para os metodos hidrologicos.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Apoio grafico e parametrizacao"}
-            }
-        },
-        {
-            "geometria_topologia",
-            "Geometria e topologia",
-            "Macrocomponente",
-            "Entrada e consolidacao dos elementos fisicos da rede, dados geometricos e topologia hidraulica.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Macrocomponente"},
-                {"Abas base", "NOMENCLATURA, BACIAS, CANAIS, BUEIROS e topologias"},
-                {"Visualizacao", "Explorador + cena central"}
-            }
-        },
-        {
-            "cadastros_geometria",
-            "Cadastros e tabelas de geometria",
-            "Grupo de planilhas",
-            "Bases auxiliares usadas na montagem e consistencia da geometria.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Grupo de planilhas"},
-                {"Abas", "NOMENCLATURA, REVESTIMENTO, SECOES, EDRH_TIPOS"}
-            }
-        },
-        {
-            "aba_nomenclatura",
-            "NOMENCLATURA",
-            "Planilha",
-            "Padroes de codificacao e nomenclatura dos elementos.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Padronizacao dos identificadores"}
-            }
-        },
-        {
-            "aba_revestimento",
-            "REVESTIMENTO",
-            "Planilha",
-            "Biblioteca de revestimentos e parametros hidraulicos associados.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Materiais e rugosidade"}
-            }
-        },
-        {
-            "aba_secoes_preliminar",
-            "SECOES_PRELIMINAR",
-            "Planilha",
-            "Definicao preliminar de secoes para canais e dispositivos.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Pre-dimensionamento geometrico"}
-            }
-        },
-        {
-            "aba_secoes_dados",
-            "SECOES_DADOS",
-            "Planilha",
-            "Cadastro detalhado das secoes efetivamente utilizadas no projeto.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Base geometrica consolidada"}
-            }
-        },
-        {
-            "aba_edrh_tipos",
-            "EDRH_TIPOS",
-            "Planilha",
-            "Tipos padronizados de elementos de drenagem/hidraulica.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Tipologias de EDRH"}
-            }
-        },
-        {
-            "topologia_rede",
-            "Topologia da rede",
-            "Grupo de planilhas",
-            "Relacionamentos montante-jusante e dados principais das bacias e dispositivos.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Grupo de planilhas"},
-                {"Abas", "BACIAS-TOPOLOGIA E DADOS, DISPOSITIVOS-TOPOLOGIA E DADOS"}
-            }
-        },
-        {
-            "aba_bacias_topologia",
-            "BACIAS-TOPOLOGIA E DADOS",
-            "Planilha",
-            "Topologia das bacias com dados de area, talvegue, declividade e vazao.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Campos-chave", "ID-SUBBACIA, ID-JUSANTE, A, L_talvegue, S, n_Manning"},
-                {"Funcao", "Base hidrologica das bacias"}
-            }
-        },
-        {
-            "aba_dispositivos_topologia",
-            "DISPOSITIVOS-TOPOLOGIA E DADOS",
-            "Planilha",
-            "Topologia dos dispositivos, conexoes e ordens hidrologicas.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Campos-chave", "ID-MONTANTE, ID-JUSANTE, IDS-MONTANTE, ORDEM_HIDROLOGICA"},
-                {"Funcao", "Base de conexao da rede"}
-            }
-        },
-        {
-            "rede_drenagem",
-            "Rede de drenagem",
-            "Grupo visual",
-            "Representacao da rede de drenagem na interface grafica, derivada da macroestrutura da planilha.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Grupo visual"},
-                {"Conteudo", "Bacias, canais, bueiros e estruturas"}
-            }
-        },
-        {
-            "grupo_bacias",
-            "Bacias de contribuicao",
-            "Grupo geometrico",
-            "Subgrupo da geometria dedicado as areas de contribuicao hidrologica.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Grupo geometrico"},
-                {"Planilha origem", "BACIAS e BACIAS-TOPOLOGIA E DADOS"},
-                {"Representacao", "Poligonos na cena"}
-            }
-        },
-        {
-            "bacia_montante",
-            "Bacia Montante",
-            "Bacia de contribuicao",
-            "Area de drenagem principal que alimenta o canal trapezoidal em estudo.",
-            4.0,
-            2.0,
-            1.0,
-            {
-                {"Tipo", "Bacia de contribuicao"},
-                {"Planilha origem", "BACIAS"},
-                {"Area", "2,84 km2"},
-                {"Tempo de concentracao", "34 min"},
-                {"Elemento jusante", "Canal Principal"}
-            }
-        },
-        {
-            "bacia_leste",
-            "Bacia Leste",
-            "Sub-bacia",
-            "Contribuicao lateral conectada ao trecho intermediario da rede.",
-            3.2,
-            1.8,
-            1.2,
-            {
-                {"Tipo", "Sub-bacia"},
-                {"Planilha origem", "BACIAS"},
-                {"Area", "1,37 km2"},
-                {"Declividade media", "4,1 %"},
-                {"Elemento jusante", "Juncao J-02"}
-            }
-        },
-        {
-            "grupo_canais",
-            "Canais e trechos",
-            "Grupo geometrico",
-            "Subgrupo com os condutos e trechos abertos principais da rede.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Grupo geometrico"},
-                {"Planilha origem", "CANAIS"},
-                {"Representacao", "Eixo e blocos na cena"}
-            }
-        },
-        {
-            "canal_principal",
-            "Canal Principal",
-            "Canal trapezoidal",
-            "Trecho principal representado na cena grafica para futuras edicoes.",
-            4.0,
-            2.0,
-            1.0,
-            {
-                {"Tipo", "Canal trapezoidal"},
-                {"Planilha origem", "CANAIS"},
-                {"Comprimento", "185 m"},
-                {"Largura de fundo", "4,00 m"},
-                {"Altura de projeto", "2,00 m"},
-                {"Declividade", "0,0010 m/m"}
-            }
-        },
-        {
-            "trecho_jusante",
-            "Trecho Jusante",
-            "Trecho de canal",
-            "Continuacao do canal apos a juncao principal, conduzindo a vazao acumulada.",
-            5.5,
-            2.4,
-            1.4,
-            {
-                {"Tipo", "Trecho de canal"},
-                {"Planilha origem", "CANAIS"},
-                {"Comprimento", "240 m"},
-                {"Largura de fundo", "5,50 m"},
-                {"Altura de projeto", "2,40 m"}
-            }
-        },
-        {
-            "grupo_bueiros",
-            "Bueiros",
-            "Grupo geometrico",
-            "Subgrupo com os dispositivos tubulares associados a planilha de bueiros.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Grupo geometrico"},
-                {"Planilha origem", "BUEIROS"},
-                {"Representacao", "Dispositivos lineares e especiais"}
-            }
-        },
-        {
-            "grupo_estruturas",
-            "Estruturas especiais",
-            "Grupo geometrico",
-            "Subgrupo de dispositivos especiais conectados a rede principal.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Grupo geometrico"},
-                {"Planilhas origem", "DISPOSITIVOS-TOPOLOGIA E DADOS e estruturas"},
-                {"Representacao", "Elemento especial na descarga"}
-            }
-        },
-        {
-            "estrutura_saida",
-            "Estrutura de Saida",
-            "Dissipador / descarga",
-            "Estrutura terminal para controle da energia especifica na descarga da rede.",
-            2.8,
-            1.5,
-            0.8,
-            {
-                {"Tipo", "Estrutura de controle"},
-                {"Planilha origem", "DISS_RESSALTO / DISPOSITIVOS-TOPOLOGIA E DADOS"},
-                {"Cota de soleira", "102,35 m"},
-                {"Largura util", "2,80 m"},
-                {"Condicao", "Descarga livre"}
-            }
-        },
-        {
-            "estruturas_hidraulicas",
-            "Estruturas hidraulicas",
-            "Macrocomponente",
-            "Dimensionamento de bueiros, dissipadores, reservatorios e dispositivos especiais.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Macrocomponente"},
-                {"Abas base", "BUEIROS, DISSIPADORES, RESERVATORIOS e auxiliares"}
-            }
-        },
-        {
-            "aba_bueiros",
-            "BUEIROS",
-            "Planilha",
-            "Dimensionamento e conferencia dos bueiros a partir da topologia e da vazao total.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Campos-chave", "ID-BUEIRO, Qp_total, A_total, L_talvegue_total, Cmed, Tc"},
-                {"Funcao", "Dimensionamento de bueiros"}
-            }
-        },
-        {
-            "aba_tubulares",
-            "TUBULAR_ADIMENSIONAIS",
-            "Planilha",
-            "Tabelas auxiliares adimensionais para dispositivos tubulares.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Consulta de parametros tubulares"}
-            }
-        },
-        {
-            "aba_espacamento",
-            "ESPACAMENTO_DISPOSITIVOS",
-            "Planilha",
-            "Apoio a distribuicao e espacamento de dispositivos na rede.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Regras de espacamento"}
-            }
-        },
-        {
-            "aba_res_det",
-            "RES_DET.",
-            "Planilha",
-            "Dimensionamento de reservatorios de detencao.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Reservatorio de detencao"}
-            }
-        },
-        {
-            "aba_res_sed",
-            "RES_SED.",
-            "Planilha",
-            "Dimensionamento de reservatorios de retencao/sedimentacao.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Retencao e sedimentacao"}
-            }
-        },
-        {
-            "aba_diss_ressalto",
-            "DISS_RESSALTO",
-            "Planilha",
-            "Dimensionamento de dissipadores por ressalto hidraulico.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Dissipacao por ressalto"}
-            }
-        },
-        {
-            "aba_diss_tapete",
-            "DISS_TAPETE_ENROCAMENTO",
-            "Planilha",
-            "Dimensionamento de dissipadores com tapete de enrocamento.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Dissipacao com enrocamento"}
-            }
-        },
-        {
-            "aba_diss_bacia",
-            "DISS_BACIA_ENROCAMENTO",
-            "Planilha",
-            "Dimensionamento de bacia dissipadora com enrocamento.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Bacia dissipadora"}
-            }
-        },
-        {
-            "resumos_relatorios",
-            "Resumos e relatorios",
-            "Macrocomponente",
-            "Consolidacao dos resultados globais e resumos por tipo de elemento.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Macrocomponente"},
-                {"Abas base", "RESUMO_GLOBAL e resumos especificos"}
-            }
-        },
-        {
-            "aba_resumo_global",
-            "RESUMO_GLOBAL",
-            "Planilha",
-            "Quadro consolidado dos elementos com vazoes, areas e ordem hidrologica.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Campos-chave", "ID, Tipo, Qp, Atotal, Tc_Atotal, ID-JUSANTE"},
-                {"Funcao", "Painel global de resultados"}
-            }
-        },
-        {
-            "aba_bacias_resumo",
-            "BACIAS_RESUMO",
-            "Planilha",
-            "Resumo sintetico das bacias para conferencia rapida.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Resumo de bacias"}
-            }
-        },
-        {
-            "aba_rusle_resumo",
-            "RUSLE_RESUMO",
-            "Planilha",
-            "Resumo da perda de solo estimada.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Resumo de RUSLE"}
-            }
-        },
-        {
-            "aba_canais_resumo",
-            "CANAIS_RESUMO",
-            "Planilha",
-            "Resumo dos canais com geometria, vazao e folga hidraulica.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Campos-chave", "Geometry, Qp, Hmax water, Freeboard"},
-                {"Funcao", "Resumo de canais"}
-            }
-        },
-        {
-            "aba_bueiros_resumo",
-            "BUEIROS_RESUMO",
-            "Planilha",
-            "Resumo dos bueiros com vazoes parciais e totais por TR.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Resumo de bueiros"}
-            }
-        },
-        {
-            "aba_diss_ressalto_resumo",
-            "DISS_RESSALTO_RESUMO",
-            "Planilha",
-            "Resumo dos dissipadores por ressalto.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Funcao", "Resumo de dissipadores"}
-            }
-        },
-        {
-            "auxiliares",
-            "Tabelas auxiliares",
-            "Macrocomponente",
-            "Bibliotecas complementares e tabelas de consulta geral do dimensionamento.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Macrocomponente"},
-                {"Aba base", "TABELAS_AUXILIARES_DIVERSAS"}
-            }
-        },
-        {
-            "aba_tabelas_aux",
-            "TABELAS_AUXILIARES_DIVERSAS",
-            "Planilha",
-            "Biblioteca de combinacoes, pecas e parametros auxiliares para dispositivos.",
-            0.0,
-            0.0,
-            0.0,
-            {
-                {"Tipo", "Planilha"},
-                {"Campos-chave", "No bueiros, D, dispositivo, combinacoes usuais"},
-                {"Funcao", "Consulta auxiliar de dimensionamento"}
-            }
-        }
-    };
+    const QString tipo = indice.data(kRoleTipoItem).toString();
 
-    for (const ElementoApresentacao& elemento : elementos) {
-        m_elementos.insert(elemento.id, elemento);
+    if (tipo == "secoes") {
+        garantirAbaSecoesTransversais();
+        statusBar()->showMessage("Aba de se\u00E7\u00F5es transversais aberta.", 3000);
     }
-
-    const QIcon iconeProjeto = style()->standardIcon(QStyle::SP_DirHomeIcon);
-    const QIcon iconePastaAberta = style()->standardIcon(QStyle::SP_DirOpenIcon);
-    const QIcon iconeArquivo = style()->standardIcon(QStyle::SP_FileIcon);
-    const QIcon iconeSalvar = style()->standardIcon(QStyle::SP_DialogSaveButton);
-
-    auto criarItem = [&](QTreeWidgetItem* pai, const QString& chave, const QIcon& icone) {
-        const ElementoApresentacao elemento = m_elementos.value(chave);
-        auto* item = new QTreeWidgetItem(QStringList() << elemento.nome);
-        item->setData(0, kRoleElementoId, chave);
-        item->setToolTip(0, elemento.tipo);
-        item->setIcon(0, icone);
-        pai->addChild(item);
-        return item;
-    };
-
-    auto* projetoItem = new QTreeWidgetItem(QStringList() << m_elementos.value("projeto_raiz").nome);
-    projetoItem->setData(0, kRoleElementoId, "projeto_raiz");
-    projetoItem->setToolTip(0, m_elementos.value("projeto_raiz").tipo);
-    projetoItem->setIcon(0, iconeProjeto);
-    m_arvoreRede->addTopLevelItem(projetoItem);
-
-    auto* pluviometriaItem = criarItem(projetoItem, "pluviometria_idf", iconePastaAberta);
-    auto* chuvasBaseItem = criarItem(pluviometriaItem, "chuvas_base", iconePastaAberta);
-    criarItem(chuvasBaseItem, "aba_p1dia", iconeArquivo);
-    criarItem(chuvasBaseItem, "aba_taborga_1974", iconeArquivo);
-    criarItem(chuvasBaseItem, "aba_reg_iso_1974", iconeArquivo);
-    criarItem(chuvasBaseItem, "aba_isozonas_2016", iconeArquivo);
-    criarItem(chuvasBaseItem, "aba_reg_iso_2016", iconeArquivo);
-    criarItem(chuvasBaseItem, "aba_regressao_1957", iconeArquivo);
-
-    auto* analiseIdfItem = criarItem(pluviometriaItem, "analise_idfs", iconePastaAberta);
-    criarItem(analiseIdfItem, "aba_analise_idfs", iconeArquivo);
-    criarItem(analiseIdfItem, "aba_idfs", iconeArquivo);
-
-    auto* hidrologiaItem = criarItem(projetoItem, "hidrologia_perdas", iconePastaAberta);
-    criarItem(hidrologiaItem, "aba_scs_cn_pefetiva", iconeArquivo);
-    criarItem(hidrologiaItem, "aba_c_equivalente", iconeArquivo);
-    criarItem(hidrologiaItem, "aba_scs_cn_c", iconeArquivo);
-    criarItem(hidrologiaItem, "aba_rusle", iconeArquivo);
-    criarItem(hidrologiaItem, "aba_curvas", iconeArquivo);
-
-    auto* geometriaItem = criarItem(projetoItem, "geometria_topologia", iconePastaAberta);
-    auto* cadastrosGeometriaItem = criarItem(geometriaItem, "cadastros_geometria", iconePastaAberta);
-    criarItem(cadastrosGeometriaItem, "aba_nomenclatura", iconeArquivo);
-    criarItem(cadastrosGeometriaItem, "aba_revestimento", iconeArquivo);
-    criarItem(cadastrosGeometriaItem, "aba_secoes_preliminar", iconeArquivo);
-    criarItem(cadastrosGeometriaItem, "aba_secoes_dados", iconeArquivo);
-    criarItem(cadastrosGeometriaItem, "aba_edrh_tipos", iconeArquivo);
-
-    auto* topologiaRedeItem = criarItem(geometriaItem, "topologia_rede", iconePastaAberta);
-    criarItem(topologiaRedeItem, "aba_bacias_topologia", iconeArquivo);
-    criarItem(topologiaRedeItem, "aba_dispositivos_topologia", iconeArquivo);
-
-    auto* redeDrenagemItem = criarItem(geometriaItem, "rede_drenagem", iconePastaAberta);
-    auto* grupoBacias = criarItem(redeDrenagemItem, "grupo_bacias", iconePastaAberta);
-    criarItem(grupoBacias, "bacia_montante", iconeArquivo);
-    criarItem(grupoBacias, "bacia_leste", iconeArquivo);
-
-    auto* grupoCanais = criarItem(redeDrenagemItem, "grupo_canais", iconePastaAberta);
-    criarItem(grupoCanais, "canal_principal", iconeArquivo);
-    criarItem(grupoCanais, "trecho_jusante", iconeArquivo);
-
-    auto* grupoBueiros = criarItem(redeDrenagemItem, "grupo_bueiros", iconePastaAberta);
-    auto* grupoEstruturas = criarItem(redeDrenagemItem, "grupo_estruturas", iconePastaAberta);
-    criarItem(grupoEstruturas, "estrutura_saida", iconeArquivo);
-
-    auto* estruturasItem = criarItem(projetoItem, "estruturas_hidraulicas", iconePastaAberta);
-    criarItem(estruturasItem, "aba_bueiros", iconeArquivo);
-    criarItem(estruturasItem, "aba_tubulares", iconeArquivo);
-    criarItem(estruturasItem, "aba_espacamento", iconeArquivo);
-    criarItem(estruturasItem, "aba_res_det", iconeArquivo);
-    criarItem(estruturasItem, "aba_res_sed", iconeArquivo);
-    criarItem(estruturasItem, "aba_diss_ressalto", iconeArquivo);
-    criarItem(estruturasItem, "aba_diss_tapete", iconeArquivo);
-    criarItem(estruturasItem, "aba_diss_bacia", iconeArquivo);
-
-    auto* resumosItem = criarItem(projetoItem, "resumos_relatorios", iconePastaAberta);
-    criarItem(resumosItem, "aba_resumo_global", iconeSalvar);
-    criarItem(resumosItem, "aba_bacias_resumo", iconeSalvar);
-    criarItem(resumosItem, "aba_rusle_resumo", iconeSalvar);
-    criarItem(resumosItem, "aba_canais_resumo", iconeSalvar);
-    criarItem(resumosItem, "aba_bueiros_resumo", iconeSalvar);
-    criarItem(resumosItem, "aba_diss_ressalto_resumo", iconeSalvar);
-
-    auto* auxiliaresItem = criarItem(projetoItem, "auxiliares", iconePastaAberta);
-    criarItem(auxiliaresItem, "aba_tabelas_aux", iconeArquivo);
-
-    projetoItem->setExpanded(true);
-    pluviometriaItem->setExpanded(true);
-    chuvasBaseItem->setExpanded(true);
-    analiseIdfItem->setExpanded(true);
-    hidrologiaItem->setExpanded(true);
-    geometriaItem->setExpanded(true);
-    cadastrosGeometriaItem->setExpanded(true);
-    topologiaRedeItem->setExpanded(true);
-    redeDrenagemItem->setExpanded(true);
-    grupoBacias->setExpanded(true);
-    grupoCanais->setExpanded(true);
-    grupoBueiros->setExpanded(true);
-    grupoEstruturas->setExpanded(true);
-    estruturasItem->setExpanded(true);
-    resumosItem->setExpanded(true);
-    auxiliaresItem->setExpanded(true);
+    else if (tipo == "canais") {
+        garantirAbaCanais();
+        statusBar()->showMessage("Aba de canais aberta.", 3000);
+    }
+    else if (tipo == "bacias") {
+        garantirAbaBacias();
+        statusBar()->showMessage("Aba de bacias aberta.", 3000);
+    }
+    else if (tipo == "uso_ocupacao_solo") {
+        garantirAbaUsoOcupacaoSolo();
+        statusBar()->showMessage("Aba de uso e ocupa\u00E7\u00E3o do solo aberta.", 3000);
+    }
+    else if (tipo == "resultados_canais") {
+        garantirAbaResultadosCanais();
+        statusBar()->showMessage("Aba de resultados de canais aberta.", 3000);
+    }
+    else if (tipo == "resultados_canais_declividade_minima") {
+        garantirAbaResultadosCanaisDeclividadeMinima();
+        statusBar()->showMessage("Resultados de canais - declividade m\u00EDnima.", 3000);
+    }
+    else if (tipo == "resultados_canais_declividade_maxima") {
+        garantirAbaResultadosCanaisDeclividadeMaxima();
+        statusBar()->showMessage("Resultados de canais - declividade m\u00E1xima.", 3000);
+    }
+    else if (tipo == "resultados_canais_declividade_final") {
+        garantirAbaResultadosCanaisDeclividadeFinal();
+        statusBar()->showMessage("Resultados de canais - declividade final.", 3000);
+    }
+    else if (tipo == "resultados_bacias") {
+        garantirAbaResultadosBacias();
+        statusBar()->showMessage("Aba de resultados de bacias aberta.", 3000);
+    }
 }
 
-void MainWindow::selecionarPrimeiroElemento()
+void MainWindow::garantirAbaSecoesTransversais()
 {
-    if (!m_arvoreRede) {
+    const int indiceExistente = indiceAbaPorChave(kAbaSecoes);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
         return;
     }
 
-    QTreeWidgetItem* projetoItem = m_arvoreRede->topLevelItem(0);
-    if (!projetoItem || projetoItem->childCount() == 0) {
-        return;
-    }
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloSecoes);
+    tabela->setItemDelegateForColumn(ModeloTabelaSecoesTransversais::ColunaGeometria, m_delegadoGeometriaSecoes);
+    ajustarLarguraColunasTabela(tabela);
 
-    QTreeWidgetItem* estudoItem = projetoItem->child(0);
-    if (!estudoItem || estudoItem->childCount() == 0) {
-        return;
-    }
-
-    QTreeWidgetItem* macroItem = estudoItem->child(0);
-    if (!macroItem || macroItem->childCount() == 0) {
-        return;
-    }
-
-    m_arvoreRede->setCurrentItem(macroItem->child(0));
+    const int indice = m_abasCentrais->addTab(tabela, "Se\u00E7\u00F5es transversais");
+    tabela->setProperty("tabKey", kAbaSecoes);
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaSecoes, tabela);
 }
 
-void MainWindow::aplicarSelecao(QTreeWidgetItem* item)
+void MainWindow::garantirAbaCanais()
 {
-    const QString chave = chaveElemento(item);
-    if (chave.isEmpty() || !m_elementos.contains(chave)) {
+    const int indiceExistente = indiceAbaPorChave(kAbaCanais);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
         return;
     }
 
-    const ElementoApresentacao elemento = m_elementos.value(chave);
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloCanais);
+    tabela->setItemDelegateForColumn(ModeloTabelaCanais::ColunaSecaoTransversal, m_delegadoSecaoCanais);
+    configurarAcaoAdicionarCanal(tabela);
+    ajustarLarguraColunasTabela(tabela);
 
-    m_tituloCentro->setText(QString("%1  |  %2").arg(elemento.nome, elemento.tipo));
-    m_subtituloCentro->setText(elemento.resumo);
-
-    atualizarPainelPropriedades(elemento);
-    destacarElementoCena(chave);
+    const int indice = m_abasCentrais->addTab(tabela, "Canais");
+    tabela->setProperty("tabKey", kAbaCanais);
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaCanais, tabela);
 }
 
-void MainWindow::atualizarPainelPropriedades(const ElementoApresentacao& elemento)
+void MainWindow::garantirAbaBacias()
 {
-    m_tabelaPropriedades->setRowCount(elemento.propriedades.size());
-
-    for (int i = 0; i < elemento.propriedades.size(); ++i) {
-        const PropriedadeElemento& propriedade = elemento.propriedades.at(i);
-        auto* itemNome = new QTableWidgetItem(propriedade.nome);
-        auto* itemValor = new QTableWidgetItem(propriedade.valor);
-        itemNome->setFlags(itemNome->flags() & ~Qt::ItemIsEditable);
-        itemValor->setFlags(itemValor->flags() & ~Qt::ItemIsEditable);
-        m_tabelaPropriedades->setItem(i, 0, itemNome);
-        m_tabelaPropriedades->setItem(i, 1, itemValor);
+    const int indiceExistente = indiceAbaPorChave(kAbaBacias);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
+        return;
     }
 
-    m_tabelaPropriedades->resizeRowsToContents();
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloBacias);
+    tabela->setItemDelegateForColumn(ModeloTabelaBacias::ColunaUsoOcupacaoSolo, m_delegadoUsoOcupacaoBacias);
+    configurarAcaoAdicionarBacia(tabela);
+    ajustarLarguraColunasTabela(tabela);
+
+    const int indice = m_abasCentrais->addTab(tabela, "Bacias");
+    tabela->setProperty("tabKey", kAbaBacias);
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaBacias, tabela);
 }
 
-void MainWindow::destacarElementoCena(const QString& chaveElemento)
+void MainWindow::garantirAbaUsoOcupacaoSolo()
 {
-    const QColor corDestaqueContorno("#0f6cbd");
-    const QColor corDestaquePreenchimento("#fde8a6");
+    const int indiceExistente = indiceAbaPorChave(kAbaUsoOcupacaoSolo);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
+        return;
+    }
 
-    for (auto it = m_itensCena.begin(); it != m_itensCena.end(); ++it) {
-        if (auto* item = dynamic_cast<QAbstractGraphicsShapeItem*>(it.value())) {
-            QBrush brush = item->brush();
-            QPen pen = item->pen();
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloUsoOcupacaoSolo);
+    ajustarLarguraColunasTabela(tabela);
 
-            if (it.key() == "bacia_montante") {
-                brush.setColor(QColor("#d9ead3"));
-                pen = criarPenPadrao(QColor("#5c8c59"), 3.0);
-            } else if (it.key() == "bacia_leste") {
-                brush.setColor(QColor("#e6efcf"));
-                pen = criarPenPadrao(QColor("#829c58"), 3.0);
-            } else if (it.key() == "canal_principal") {
-                brush.setColor(QColor("#f3c77a"));
-                pen = criarPenPadrao(QColor("#b66f15"), 3.0);
-            } else if (it.key() == "trecho_jusante") {
-                brush.setColor(QColor("#f6d59b"));
-                pen = criarPenPadrao(QColor("#bd7f2d"), 3.0);
-            } else if (it.key() == "estrutura_saida") {
-                brush.setColor(QColor("#f2b4b4"));
-                pen = criarPenPadrao(QColor("#9b3434"), 3.0);
-            }
+    const int indice = m_abasCentrais->addTab(tabela, "Uso e ocupa\u00E7\u00E3o do solo");
+    tabela->setProperty("tabKey", kAbaUsoOcupacaoSolo);
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaUsoOcupacaoSolo, tabela);
+}
 
-            item->setBrush(brush);
-            item->setPen(pen);
-            item->setZValue(1.0);
+void MainWindow::garantirAbaResultadosCanais()
+{
+    const int indiceExistente = indiceAbaPorChave(kAbaResultadosCanais);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
+        return;
+    }
+
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloResultadosCanais);
+    configurarVisibilidadeColunasResultadosCanais(tabela, "geral");
+    ajustarLarguraColunasTabela(tabela);
+
+    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Canais");
+    tabela->setProperty("tabKey", kAbaResultadosCanais);
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaResultadosCanais, tabela);
+}
+
+void MainWindow::garantirAbaResultadosCanaisDeclividadeMinima()
+{
+    const int indiceExistente = indiceAbaPorChave(kAbaResultadosCanaisDeclividadeMinima);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
+        return;
+    }
+
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloResultadosCanais);
+    configurarVisibilidadeColunasResultadosCanais(tabela, "min");
+    ajustarLarguraColunasTabela(tabela);
+
+    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Canais (Sp min)");
+    tabela->setProperty("tabKey", kAbaResultadosCanaisDeclividadeMinima);
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaResultadosCanaisDeclividadeMinima, tabela);
+}
+
+void MainWindow::garantirAbaResultadosCanaisDeclividadeMaxima()
+{
+    const int indiceExistente = indiceAbaPorChave(kAbaResultadosCanaisDeclividadeMaxima);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
+        return;
+    }
+
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloResultadosCanais);
+    configurarVisibilidadeColunasResultadosCanais(tabela, "max");
+    ajustarLarguraColunasTabela(tabela);
+
+    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Canais (Sp max)");
+    tabela->setProperty("tabKey", kAbaResultadosCanaisDeclividadeMaxima);
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaResultadosCanaisDeclividadeMaxima, tabela);
+}
+
+void MainWindow::garantirAbaResultadosCanaisDeclividadeFinal()
+{
+    const int indiceExistente = indiceAbaPorChave(kAbaResultadosCanaisDeclividadeFinal);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
+        return;
+    }
+
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloResultadosCanais);
+    configurarVisibilidadeColunasResultadosCanais(tabela, "final");
+    ajustarLarguraColunasTabela(tabela);
+
+    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Canais (Sp final)");
+    tabela->setProperty("tabKey", kAbaResultadosCanaisDeclividadeFinal);
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaResultadosCanaisDeclividadeFinal, tabela);
+}
+
+void MainWindow::garantirAbaResultadosBacias()
+{
+    const int indiceExistente = indiceAbaPorChave(kAbaResultadosBacias);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
+        return;
+    }
+
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloResultadosBacias);
+    ajustarLarguraColunasTabela(tabela);
+
+    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Bacias");
+    tabela->setProperty("tabKey", kAbaResultadosBacias);
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaResultadosBacias, tabela);
+}
+
+int MainWindow::indiceAbaPorChave(const QString& chave) const
+{
+    for (int indice = 0; indice < m_abasCentrais->count(); ++indice) {
+        QWidget* pagina = m_abasCentrais->widget(indice);
+        if (pagina && pagina->property("tabKey").toString() == chave) {
+            return indice;
         }
     }
+    return -1;
+}
 
-    QGraphicsItem* itemSelecionado = m_itensCena.value(chaveElemento, nullptr);
-    if (auto* shape = dynamic_cast<QAbstractGraphicsShapeItem*>(itemSelecionado)) {
-        QBrush brush = shape->brush();
-        brush.setColor(corDestaquePreenchimento);
-        shape->setBrush(brush);
-        shape->setPen(criarPenPadrao(corDestaqueContorno, 4.0));
-        shape->setZValue(5.0);
-        m_viewRede->fitInView(shape->sceneBoundingRect().adjusted(-150.0, -110.0, 150.0, 110.0), Qt::KeepAspectRatio);
-    } else {
-        m_viewRede->fitInView(m_cenaRede->sceneRect().adjusted(60.0, 40.0, -60.0, -40.0), Qt::KeepAspectRatio);
+QTableView* MainWindow::criarTabelaBase()
+{
+    auto* tabela = new QTableView(m_abasCentrais);
+    tabela->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
+    tabela->setSelectionBehavior(QAbstractItemView::SelectItems);
+    tabela->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    tabela->setAlternatingRowColors(true);
+    tabela->setSortingEnabled(false);
+    tabela->verticalHeader()->setVisible(true);
+    tabela->verticalHeader()->setSectionsClickable(true);
+    tabela->horizontalHeader()->setSectionsClickable(true);
+    tabela->horizontalHeader()->setHighlightSections(true);
+    tabela->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    tabela->horizontalHeader()->setStretchLastSection(false);
+    tabela->setContextMenuPolicy(Qt::CustomContextMenu);
+
+    // Permite selecionar linha inteira ao clicar no cabeçalho vertical.
+    connect(tabela->verticalHeader(), &QHeaderView::sectionClicked, tabela, [tabela](int secao) {
+        if (!tabela || !tabela->model()) return;
+        if (secao < 0 || secao >= tabela->model()->rowCount()) return;
+        tabela->selectRow(secao);
+    });
+
+    // Permite selecionar coluna inteira ao clicar no cabeçalho horizontal.
+    connect(tabela->horizontalHeader(), &QHeaderView::sectionClicked, tabela, [tabela](int secao) {
+        if (!tabela || !tabela->model()) return;
+        if (secao < 0 || secao >= tabela->model()->columnCount()) return;
+        tabela->selectColumn(secao);
+    });
+
+    configurarAcoesCopiarColarTabela(tabela);
+    return tabela;
+}
+
+void MainWindow::ajustarLarguraColunasTabela(QTableView* tabela) const
+{
+    if (!tabela || !tabela->model()) return;
+
+    // Primeiro ajusta com base em header + conteúdo.
+    tabela->resizeColumnsToContents();
+
+    // Mantém ajuste manual pelo usuário após o dimensionamento inicial.
+    tabela->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+}
+
+void MainWindow::configurarAcoesCopiarColarTabela(QTableView* tabela)
+{
+    if (!tabela) return;
+
+    auto* atalhoCopiar = new QShortcut(QKeySequence::Copy, tabela);
+    connect(atalhoCopiar, &QShortcut::activated,
+            this,
+            [this, tabela]() {
+                copiarSelecaoTabela(tabela);
+            });
+
+    auto* atalhoColar = new QShortcut(QKeySequence::Paste, tabela);
+    connect(atalhoColar, &QShortcut::activated,
+            this,
+            [this, tabela]() {
+                colarDadosTabela(tabela);
+            });
+}
+
+void MainWindow::copiarSelecaoTabela(QTableView* tabela) const
+{
+    if (!tabela || !tabela->model() || !tabela->selectionModel()) return;
+
+    const QModelIndexList indices = tabela->selectionModel()->selectedIndexes();
+    if (indices.isEmpty()) return;
+
+    int menorLinha = indices.first().row();
+    int maiorLinha = indices.first().row();
+    int menorColuna = indices.first().column();
+    int maiorColuna = indices.first().column();
+
+    for (const QModelIndex& indice : indices) {
+        menorLinha = std::min(menorLinha, indice.row());
+        maiorLinha = std::max(maiorLinha, indice.row());
+        menorColuna = std::min(menorColuna, indice.column());
+        maiorColuna = std::max(maiorColuna, indice.column());
     }
+
+    QStringList linhasTexto;
+    for (int linha = menorLinha; linha <= maiorLinha; ++linha) {
+        QStringList colunasTexto;
+        for (int coluna = menorColuna; coluna <= maiorColuna; ++coluna) {
+            const QModelIndex indice = tabela->model()->index(linha, coluna);
+            if (tabela->selectionModel()->isSelected(indice)) {
+                colunasTexto << indice.data(Qt::DisplayRole).toString();
+            }
+            else {
+                colunasTexto << QString();
+            }
+        }
+        linhasTexto << colunasTexto.join('\t');
+    }
+
+    QApplication::clipboard()->setText(linhasTexto.join('\n'));
+}
+
+void MainWindow::colarDadosTabela(QTableView* tabela)
+{
+    if (!tabela || !tabela->model()) return;
+
+    QString texto = QApplication::clipboard()->text();
+    if (texto.trimmed().isEmpty()) return;
+
+    // Normaliza quebra de linha vinda do Excel.
+    texto.replace("\r\n", "\n");
+    texto.replace('\r', '\n');
+
+    QStringList linhas = texto.split('\n', Qt::KeepEmptyParts);
+    if (!linhas.isEmpty() && linhas.last().isEmpty()) {
+        linhas.removeLast();
+    }
+    if (linhas.isEmpty()) return;
+
+    QModelIndex indiceInicial = tabela->currentIndex();
+    if (!indiceInicial.isValid()) {
+        indiceInicial = tabela->model()->index(0, 0);
+    }
+
+    const int linhaBase = indiceInicial.row();
+    const int colunaBase = indiceInicial.column();
+
+    for (int deslocLinha = 0; deslocLinha < linhas.size(); ++deslocLinha) {
+        const QStringList colunas = linhas.at(deslocLinha).split('\t', Qt::KeepEmptyParts);
+
+        for (int deslocColuna = 0; deslocColuna < colunas.size(); ++deslocColuna) {
+            const int linhaDestino = linhaBase + deslocLinha;
+            const int colunaDestino = colunaBase + deslocColuna;
+
+            if (linhaDestino < 0 || linhaDestino >= tabela->model()->rowCount()) continue;
+            if (colunaDestino < 0 || colunaDestino >= tabela->model()->columnCount()) continue;
+
+            const QModelIndex indiceDestino = tabela->model()->index(linhaDestino, colunaDestino);
+            tabela->model()->setData(indiceDestino, colunas.at(deslocColuna), Qt::EditRole);
+        }
+    }
+}
+
+void MainWindow::prepararModeloCanais()
+{
+    m_modeloCanais->definirCanais(criarCanaisExemplo());
+
+    // Replica as seções do cenário manual de referência.
+    const QVector<QString> secoes = {
+        "CSD-1", "CSD-1", "CSD-3", "CSD-4", "CSD-1",
+        "CSD-2", "CSD-4", "CSD-4", "VTD-1", "CSD-3"
+    };
+
+    const int total = std::min(m_modeloCanais->rowCount(), static_cast<int>(secoes.size()));
+    for (int linha = 0; linha < total; ++linha) {
+        m_modeloCanais->setData(
+            m_modeloCanais->index(linha, ModeloTabelaCanais::ColunaSecaoTransversal),
+            secoes.at(linha),
+            Qt::EditRole);
+    }
+}
+
+void MainWindow::prepararModeloBacias()
+{
+    m_modeloBacias->definirBacias(criarBaciasExemplo());
+}
+
+void MainWindow::calcularResultadosModelo()
+{
+    atualizarModeloResultadosCanais();
+    atualizarModeloResultadosBacias();
+}
+
+void MainWindow::configurarAcoesProjeto()
+{
+    m_acaoSalvarProjeto = new QAction("Salvar projeto", this);
+    m_acaoSalvarProjeto->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+
+    m_acaoAbrirProjeto = new QAction("Abrir projeto", this);
+    m_acaoAbrirProjeto->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
+
+    m_acaoImportarBaciasCsv = new QAction("Importar bacias (.csv)", this);
+    m_acaoImportarBaciasCsv->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
+
+    m_acaoImportarUsoOcupacaoCsv = new QAction("Importar uso/ocupação (.csv)", this);
+    m_acaoImportarUsoOcupacaoCsv->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
+
+    m_acaoImportarCanaisCsv = new QAction("Importar canais (.csv)", this);
+    m_acaoImportarCanaisCsv->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
+
+    connect(m_acaoSalvarProjeto, &QAction::triggered,
+            this,
+            [this]() {
+                salvarProjetoEmArquivo();
+            });
+
+    connect(m_acaoAbrirProjeto, &QAction::triggered,
+            this,
+            [this]() {
+                abrirProjetoDeArquivo();
+            });
+
+    connect(m_acaoImportarBaciasCsv, &QAction::triggered,
+            this,
+            [this]() {
+                importarBaciasDeCsv();
+            });
+
+    connect(m_acaoImportarUsoOcupacaoCsv, &QAction::triggered,
+            this,
+            [this]() {
+                importarUsoOcupacaoSoloDeCsv();
+            });
+
+    connect(m_acaoImportarCanaisCsv, &QAction::triggered,
+            this,
+            [this]() {
+                importarCanaisDeCsv();
+            });
+
+    QToolBar* barraProjeto = addToolBar("Projeto");
+    barraProjeto->setMovable(false);
+    barraProjeto->addAction(m_acaoSalvarProjeto);
+    barraProjeto->addAction(m_acaoAbrirProjeto);
+    barraProjeto->addAction(m_acaoImportarBaciasCsv);
+    barraProjeto->addAction(m_acaoImportarUsoOcupacaoCsv);
+    barraProjeto->addAction(m_acaoImportarCanaisCsv);
+}
+
+QJsonObject MainWindow::criarObjetoJsonProjeto() const
+{
+    QJsonObject projeto;
+    projeto["versao"] = 1;
+
+    QJsonArray secoesJson;
+    for (const RegistroSecaoTransversal& registro : m_modeloSecoes->registros()) {
+        QJsonObject item;
+        item["nomenclatura"] = registro.nomenclatura;
+        item["geometria"] = registro.geometria;
+        item["b_menor_m"] = registro.baseMenorM;
+        item["talude"] = registro.talude;
+        item["diametro_m"] = registro.diametroM;
+        secoesJson.append(item);
+    }
+    projeto["secoes"] = secoesJson;
+
+    QJsonArray usosSoloJson;
+    for (const TipoUsoOcupacaoSolo& tipo : m_modeloUsoOcupacaoSolo->tiposUsoOcupacao()) {
+        QJsonObject item;
+        item["id"] = tipo.id();
+        item["n_manning"] = tipo.nManning();
+        item["c_runoff"] = tipo.cRunoff();
+        item["curve_number"] = tipo.curveNumber();
+        item["fator_r"] = tipo.fatorR();
+        item["fator_k"] = tipo.fatorK();
+        item["fator_c"] = tipo.fatorC();
+        item["fator_p"] = tipo.fatorP();
+        item["densidade_kg_m3"] = tipo.densidadeKgM3();
+        usosSoloJson.append(item);
+    }
+    projeto["usos_ocupacao_solo"] = usosSoloJson;
+
+    QJsonArray canaisJson;
+    const QVector<Canal>& canais = m_modeloCanais->canais();
+    for (int linha = 0; linha < canais.size(); ++linha) {
+        const Canal& canal = canais.at(linha);
+
+        QJsonObject item;
+        item["id"] = canal.id();
+        item["id_jusante"] = canal.idJusante();
+        item["secao"] = m_modeloCanais->idSecaoPorLinha(linha);
+        item["comprimento_m"] = canal.comprimento();
+        item["largura_fundo_m"] = canal.larguraFundo();
+        item["talude_lateral"] = canal.taludeLateral();
+        item["declividade_final_m_m"] = canal.declividadeFinal();
+        item["declividade_min_m_m"] = canal.declividadeMinima();
+        item["declividade_max_m_m"] = canal.declividadeMaxima();
+        item["coeficiente_manning"] = canal.coeficienteManning();
+        canaisJson.append(item);
+    }
+    projeto["canais"] = canaisJson;
+
+    QJsonArray baciasJson;
+    const QVector<BaciaContribuicao>& baciasModelo = m_modeloBacias->bacias();
+    for (int linha = 0; linha < baciasModelo.size(); ++linha) {
+        const BaciaContribuicao& bacia = baciasModelo.at(linha);
+        QJsonObject item;
+        item["id"] = bacia.id();
+        item["bacia"] = m_modeloBacias->nomeBaciaPorLinha(linha);
+        item["subbacia"] = m_modeloBacias->nomeSubbaciaPorLinha(linha);
+        item["uso_ocupacao_solo"] = m_modeloBacias->idUsoOcupacaoPorLinha(linha);
+        item["id_jusante"] = bacia.idJusante();
+        item["area_km2"] = bacia.areaKm2();
+        item["declividade_media"] = bacia.declividadeMedia();
+        item["comprimento_talvegue_km"] = bacia.comprimentoTalveguePrincipalKm();
+        item["c10"] = bacia.C_10();
+        baciasJson.append(item);
+    }
+    projeto["bacias"] = baciasJson;
+
+    return projeto;
+}
+
+bool MainWindow::aplicarObjetoJsonProjeto(const QJsonObject& objetoProjeto)
+{
+    if (!objetoProjeto.contains("secoes")
+        || !objetoProjeto.contains("canais")
+        || !objetoProjeto.contains("bacias")) {
+        return false;
+    }
+
+    const QJsonArray secoesJson = objetoProjeto.value("secoes").toArray();
+    const QJsonArray usosSoloJson = objetoProjeto.value("usos_ocupacao_solo").toArray();
+    const QJsonArray canaisJson = objetoProjeto.value("canais").toArray();
+    const QJsonArray baciasJson = objetoProjeto.value("bacias").toArray();
+
+    QVector<RegistroSecaoTransversal> secoes;
+    secoes.reserve(secoesJson.size());
+    for (const QJsonValue& valor : secoesJson) {
+        const QJsonObject item = valor.toObject();
+        RegistroSecaoTransversal registro;
+        registro.nomenclatura = item.value("nomenclatura").toString().trimmed();
+        registro.geometria = item.value("geometria").toString().trimmed();
+        registro.baseMenorM = item.value("b_menor_m").toString().trimmed();
+        registro.talude = item.value("talude").toString().trimmed();
+        registro.diametroM = item.value("diametro_m").toString().trimmed();
+        if (registro.nomenclatura.isEmpty()) continue;
+        secoes.append(registro);
+    }
+
+    QVector<TipoUsoOcupacaoSolo> tiposUsoOcupacao;
+    tiposUsoOcupacao.reserve(usosSoloJson.size());
+    for (const QJsonValue& valor : usosSoloJson) {
+        const QJsonObject item = valor.toObject();
+        const QString id = item.value("id").toString().trimmed();
+        if (id.isEmpty()) continue;
+
+        TipoUsoOcupacaoSolo tipo(id);
+        tipo.setNManning(item.value("n_manning").toDouble());
+        tipo.setCRunoff(item.value("c_runoff").toDouble());
+        tipo.setCurveNumber(item.value("curve_number").toDouble());
+        tipo.setFatorR(item.value("fator_r").toDouble());
+        tipo.setFatorK(item.value("fator_k").toDouble());
+        tipo.setFatorC(item.value("fator_c").toDouble());
+        tipo.setFatorP(item.value("fator_p").toDouble());
+        tipo.setDensidadeKgM3(item.value("densidade_kg_m3").toDouble());
+        tiposUsoOcupacao.append(tipo);
+    }
+
+    QVector<Canal> canais;
+    QVector<QString> secoesCanal;
+    canais.reserve(canaisJson.size());
+    secoesCanal.reserve(canaisJson.size());
+    for (const QJsonValue& valor : canaisJson) {
+        const QJsonObject item = valor.toObject();
+        const QString id = item.value("id").toString().trimmed();
+        if (id.isEmpty()) continue;
+
+        Canal canal(id);
+        canal.setIdJusante(item.value("id_jusante").toString());
+        canal.setComprimento(item.value("comprimento_m").toDouble());
+        canal.setLarguraFundo(item.value("largura_fundo_m").toDouble());
+        canal.setTaludeLateral(item.value("talude_lateral").toDouble());
+        canal.setDeclividadeFinal(item.value("declividade_final_m_m").toDouble());
+        canal.setDeclividadeMinima(item.value("declividade_min_m_m").toDouble());
+        canal.setDeclividadeMaxima(item.value("declividade_max_m_m").toDouble());
+        canal.setCoeficienteManning(item.value("coeficiente_manning").toDouble());
+
+        canais.append(canal);
+        secoesCanal.append(item.value("secao").toString().trimmed());
+    }
+
+    QVector<BaciaContribuicao> bacias;
+    QVector<QString> idsUsoOcupacaoPorLinhaBacia;
+    bacias.reserve(baciasJson.size());
+    idsUsoOcupacaoPorLinhaBacia.reserve(baciasJson.size());
+    for (const QJsonValue& valor : baciasJson) {
+        const QJsonObject item = valor.toObject();
+        const QString nomeBacia = item.value("bacia").toString().trimmed();
+        const QString nomeSubbacia = item.value("subbacia").toString().trimmed();
+        QString id = item.value("id").toString().trimmed();
+        if (!nomeBacia.isEmpty() && !nomeSubbacia.isEmpty()) {
+            id = QString("%1-%2").arg(nomeBacia, nomeSubbacia);
+        }
+        if (id.isEmpty()) continue;
+
+        BaciaContribuicao bacia(id);
+        bacia.setIdJusante(item.value("id_jusante").toString());
+        bacia.setAreaKm2(item.value("area_km2").toDouble());
+        bacia.setDeclividadeMedia(item.value("declividade_media").toDouble());
+        bacia.setComprimentoTalveguePrincipalKm(item.value("comprimento_talvegue_km").toDouble());
+        bacia.setC_10(item.value("c10").toDouble());
+
+        bacias.append(bacia);
+        idsUsoOcupacaoPorLinhaBacia.append(item.value("uso_ocupacao_solo").toString().trimmed());
+    }
+
+    m_modeloSecoes->definirRegistros(secoes);
+    if (!tiposUsoOcupacao.isEmpty()) {
+        m_modeloUsoOcupacaoSolo->definirTiposUsoOcupacao(tiposUsoOcupacao);
+    }
+    m_modeloCanais->definirCanais(canais);
+    m_modeloBacias->definirBacias(bacias);
+
+    const int totalSecoesCanal = std::min(m_modeloCanais->rowCount(), static_cast<int>(secoesCanal.size()));
+    for (int linha = 0; linha < totalSecoesCanal; ++linha) {
+        m_modeloCanais->setData(
+            m_modeloCanais->index(linha, ModeloTabelaCanais::ColunaSecaoTransversal),
+            secoesCanal.at(linha),
+            Qt::EditRole);
+    }
+
+    const int totalUsosBacia = std::min(m_modeloBacias->rowCount(), static_cast<int>(idsUsoOcupacaoPorLinhaBacia.size()));
+    for (int linha = 0; linha < totalUsosBacia; ++linha) {
+        m_modeloBacias->setData(
+            m_modeloBacias->index(linha, ModeloTabelaBacias::ColunaUsoOcupacaoSolo),
+            idsUsoOcupacaoPorLinhaBacia.at(linha),
+            Qt::EditRole);
+    }
+
+    for (QTableView* tabela : m_tabelaPorChave) {
+        ajustarLarguraColunasTabela(tabela);
+    }
+
+    calcularResultadosModelo();
+    return true;
+}
+
+void MainWindow::salvarProjetoEmArquivo()
+{
+    const QString caminhoArquivo = QFileDialog::getSaveFileName(
+        this,
+        "Salvar projeto",
+        QString(),
+        "Projeto SISTEMAHDR (*.sishdr.json);;JSON (*.json)");
+    if (caminhoArquivo.isEmpty()) return;
+
+    QFile arquivo(caminhoArquivo);
+    if (!arquivo.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QMessageBox::warning(this, "Salvar projeto", "Não foi possível salvar o arquivo informado.");
+        return;
+    }
+
+    const QJsonDocument documento(criarObjetoJsonProjeto());
+    arquivo.write(documento.toJson(QJsonDocument::Indented));
+    arquivo.close();
+
+    statusBar()->showMessage("Projeto salvo com sucesso.", 2500);
+}
+
+void MainWindow::abrirProjetoDeArquivo()
+{
+    const QString caminhoArquivo = QFileDialog::getOpenFileName(
+        this,
+        "Abrir projeto",
+        QString(),
+        "Projeto SISTEMAHDR (*.sishdr.json *.json);;JSON (*.json)");
+    if (caminhoArquivo.isEmpty()) return;
+
+    QFile arquivo(caminhoArquivo);
+    if (!arquivo.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, "Abrir projeto", "Não foi possível abrir o arquivo informado.");
+        return;
+    }
+
+    const QByteArray conteudo = arquivo.readAll();
+    arquivo.close();
+
+    QJsonParseError erroParse;
+    const QJsonDocument documento = QJsonDocument::fromJson(conteudo, &erroParse);
+    if (erroParse.error != QJsonParseError::NoError || !documento.isObject()) {
+        QMessageBox::warning(this, "Abrir projeto", "Arquivo inválido para projeto SISTEMAHDR.");
+        return;
+    }
+
+    if (!aplicarObjetoJsonProjeto(documento.object())) {
+        QMessageBox::warning(this, "Abrir projeto", "Os dados do arquivo estão incompletos ou inválidos.");
+        return;
+    }
+
+    statusBar()->showMessage("Projeto carregado com sucesso.", 2500);
+}
+
+void MainWindow::importarBaciasDeCsv()
+{
+    const QString caminhoArquivo = QFileDialog::getOpenFileName(
+        this,
+        "Importar bacias por CSV",
+        QString(),
+        "Arquivo CSV (*.csv)");
+    if (caminhoArquivo.isEmpty()) return;
+
+    QFile arquivo(caminhoArquivo);
+    if (!arquivo.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, "Importar CSV", "Não foi possível abrir o arquivo CSV informado.");
+        return;
+    }
+
+    const QByteArray conteudoBytes = arquivo.readAll();
+    arquivo.close();
+
+    QString conteudo = QString::fromUtf8(conteudoBytes);
+    if (conteudo.contains(QChar::ReplacementCharacter)) {
+        conteudo = QString::fromLocal8Bit(conteudoBytes);
+    }
+
+    conteudo.replace("\r\n", "\n");
+    conteudo.replace('\r', '\n');
+    const QStringList linhas = conteudo.split('\n', Qt::SkipEmptyParts);
+    if (linhas.size() <= 1) {
+        QMessageBox::warning(this, "Importar CSV", "Arquivo CSV vazio ou sem dados válidos.");
+        return;
+    }
+
+    QVector<BaciaContribuicao> baciasImportadas;
+    baciasImportadas.reserve(linhas.size() - 1);
+
+    QSet<QString> combinacoesUnicas;
+    const QString separadorCombinacao = "||";
+
+    QStringList erros;
+    for (int i = 1; i < linhas.size(); ++i) {
+        const QString linhaTexto = linhas.at(i).trimmed();
+        if (linhaTexto.isEmpty()) continue;
+
+        const QStringList colunas = linhaTexto.split(',', Qt::KeepEmptyParts);
+        if (colunas.size() < 6) {
+            erros << QString("Linha %1 inválida: quantidade de colunas insuficiente.").arg(i + 1);
+            continue;
+        }
+
+        const QString nomeBacia = colunas.at(0).trimmed();
+        const QString nomeSubbacia = colunas.at(1).trimmed();
+        const QString idJusante = colunas.at(2).trimmed();
+
+        const double areaM2 = colunas.at(3).trimmed().toDouble();
+        const double lTalvegueM = colunas.at(4).trimmed().toDouble();
+
+        QString declividadeTexto = colunas.at(5).trimmed();
+        declividadeTexto.remove('%');
+        const double declividadePercentual = declividadeTexto.toDouble();
+
+        if (nomeBacia.isEmpty() || nomeSubbacia.isEmpty()) {
+            erros << QString("Linha %1 inválida: Bacia/Subbacia vazias.").arg(i + 1);
+            continue;
+        }
+
+        const QString chaveCombinacao = QString("%1%2%3")
+            .arg(nomeBacia.toUpper(), separadorCombinacao, nomeSubbacia.toUpper());
+        if (combinacoesUnicas.contains(chaveCombinacao)) {
+            erros << QString("Linha %1 inválida: combinação Bacia-Subbacia duplicada no CSV.").arg(i + 1);
+            continue;
+        }
+        combinacoesUnicas.insert(chaveCombinacao);
+
+        const QString idComposto = QString("%1-%2").arg(nomeBacia, nomeSubbacia);
+        BaciaContribuicao bacia(idComposto);
+        bacia.setIdJusante(idJusante);
+        bacia.setAreaM2(areaM2);
+        bacia.setComprimentoTalveguePrincipalKm(std::max(0.0, lTalvegueM) / 1000.0);
+        bacia.setDeclividadeMedia(std::max(0.0, declividadePercentual) / 100.0);
+        bacia.setC_10(0.6);
+
+        baciasImportadas.append(bacia);
+    }
+
+    if (!erros.isEmpty()) {
+        QMessageBox::warning(this,
+                             "Importar CSV",
+                             QString("Foram encontrados erros durante a importação:\n- %1")
+                                 .arg(erros.join("\n- ")));
+        return;
+    }
+
+    if (baciasImportadas.isEmpty()) {
+        QMessageBox::warning(this, "Importar CSV", "Nenhuma bacia válida encontrada no arquivo CSV.");
+        return;
+    }
+
+    m_modeloBacias->definirBacias(baciasImportadas);
+
+    if (m_tabelaPorChave.contains(kAbaBacias)) {
+        ajustarLarguraColunasTabela(m_tabelaPorChave.value(kAbaBacias));
+    }
+
+    calcularResultadosModelo();
+    statusBar()->showMessage("Bacias importadas com sucesso do CSV.", 3000);
+}
+
+void MainWindow::importarUsoOcupacaoSoloDeCsv()
+{
+    const QString caminhoArquivo = QFileDialog::getOpenFileName(
+        this,
+        "Importar uso e ocupação do solo por CSV",
+        QString(),
+        "Arquivo CSV (*.csv)");
+    if (caminhoArquivo.isEmpty()) return;
+
+    QFile arquivo(caminhoArquivo);
+    if (!arquivo.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, "Importar CSV", "Não foi possível abrir o arquivo CSV informado.");
+        return;
+    }
+
+    const QByteArray conteudoBytes = arquivo.readAll();
+    arquivo.close();
+
+    QString conteudo = QString::fromUtf8(conteudoBytes);
+    if (conteudo.contains(QChar::ReplacementCharacter)) {
+        conteudo = QString::fromLocal8Bit(conteudoBytes);
+    }
+
+    conteudo.replace("\r\n", "\n");
+    conteudo.replace('\r', '\n');
+    const QStringList linhas = conteudo.split('\n', Qt::SkipEmptyParts);
+    if (linhas.size() <= 1) {
+        QMessageBox::warning(this, "Importar CSV", "Arquivo CSV vazio ou sem dados válidos.");
+        return;
+    }
+
+    QVector<TipoUsoOcupacaoSolo> tiposImportados;
+    tiposImportados.reserve(linhas.size() - 1);
+
+    QSet<QString> idsUnicos;
+    QStringList erros;
+
+    for (int i = 1; i < linhas.size(); ++i) {
+        const QString linhaTexto = linhas.at(i).trimmed();
+        if (linhaTexto.isEmpty()) continue;
+
+        const QStringList colunas = linhaTexto.split(',', Qt::KeepEmptyParts);
+        if (colunas.size() < 9) {
+            erros << QString("Linha %1 inválida: quantidade de colunas insuficiente.").arg(i + 1);
+            continue;
+        }
+
+        const QString id = colunas.at(0).trimmed();
+        if (id.isEmpty()) {
+            erros << QString("Linha %1 inválida: ID vazio.").arg(i + 1);
+            continue;
+        }
+
+        const QString idNormalizado = id.toUpper();
+        if (idsUnicos.contains(idNormalizado)) {
+            erros << QString("Linha %1 inválida: ID duplicado no CSV.").arg(i + 1);
+            continue;
+        }
+        idsUnicos.insert(idNormalizado);
+
+        TipoUsoOcupacaoSolo tipo(id);
+        tipo.setNManning(std::max(0.0, converterTextoParaNumeroCsv(colunas.at(1))));
+        tipo.setCRunoff(std::max(0.0, converterTextoParaNumeroCsv(colunas.at(2))));
+        tipo.setCurveNumber(std::max(0.0, converterTextoParaNumeroCsv(colunas.at(3))));
+        tipo.setFatorR(std::max(0.0, converterTextoParaNumeroCsv(colunas.at(4))));
+        tipo.setFatorK(std::max(0.0, converterTextoParaNumeroCsv(colunas.at(5))));
+        tipo.setFatorC(std::max(0.0, converterTextoParaNumeroCsv(colunas.at(6))));
+        tipo.setFatorP(std::max(0.0, converterTextoParaNumeroCsv(colunas.at(7))));
+        tipo.setDensidadeKgM3(std::max(0.0, converterTextoParaNumeroCsv(colunas.at(8))));
+
+        tiposImportados.append(tipo);
+    }
+
+    if (!erros.isEmpty()) {
+        QMessageBox::warning(this,
+                             "Importar CSV",
+                             QString("Foram encontrados erros durante a importação:\n- %1")
+                                 .arg(erros.join("\n- ")));
+        return;
+    }
+
+    if (tiposImportados.isEmpty()) {
+        QMessageBox::warning(this, "Importar CSV", "Nenhum tipo de uso/ocupação válido encontrado no CSV.");
+        return;
+    }
+
+    m_modeloUsoOcupacaoSolo->definirTiposUsoOcupacao(tiposImportados);
+    m_modeloBacias->sincronizarCoeficienteRunoffPeloUsoOcupacao();
+
+    if (m_tabelaPorChave.contains(kAbaBacias)) {
+        ajustarLarguraColunasTabela(m_tabelaPorChave.value(kAbaBacias));
+    }
+
+    if (m_tabelaPorChave.contains(kAbaUsoOcupacaoSolo)) {
+        ajustarLarguraColunasTabela(m_tabelaPorChave.value(kAbaUsoOcupacaoSolo));
+    }
+
+    calcularResultadosModelo();
+    statusBar()->showMessage("Uso e ocupação do solo importados com sucesso do CSV.", 3000);
+}
+
+void MainWindow::importarCanaisDeCsv()
+{
+    const QString caminhoArquivo = QFileDialog::getOpenFileName(
+        this,
+        "Importar canais por CSV",
+        QString(),
+        "Arquivo CSV (*.csv)");
+    if (caminhoArquivo.isEmpty()) return;
+
+    QFile arquivo(caminhoArquivo);
+    if (!arquivo.open(QIODevice::ReadOnly)) {
+        QMessageBox::warning(this, "Importar CSV", "Não foi possível abrir o arquivo CSV informado.");
+        return;
+    }
+
+    const QByteArray conteudoBytes = arquivo.readAll();
+    arquivo.close();
+
+    QString conteudo = QString::fromUtf8(conteudoBytes);
+    if (conteudo.contains(QChar::ReplacementCharacter)) {
+        conteudo = QString::fromLocal8Bit(conteudoBytes);
+    }
+
+    conteudo.replace("\r\n", "\n");
+    conteudo.replace('\r', '\n');
+    const QStringList linhas = conteudo.split('\n', Qt::SkipEmptyParts);
+    if (linhas.size() <= 1) {
+        QMessageBox::warning(this, "Importar CSV", "Arquivo CSV vazio ou sem dados válidos.");
+        return;
+    }
+
+    QVector<Canal> canaisImportados;
+    QVector<QString> secoesPorLinha;
+    canaisImportados.reserve(linhas.size() - 1);
+    secoesPorLinha.reserve(linhas.size() - 1);
+
+    QSet<QString> idsUnicos;
+    QStringList erros;
+
+    for (int i = 1; i < linhas.size(); ++i) {
+        const QString linhaTexto = linhas.at(i).trimmed();
+        if (linhaTexto.isEmpty()) continue;
+
+        const QStringList colunas = linhaTexto.split(',', Qt::KeepEmptyParts);
+        if (colunas.size() < 6) {
+            erros << QString("Linha %1 inválida: quantidade de colunas insuficiente.").arg(i + 1);
+            continue;
+        }
+
+        const QString idCanal = colunas.at(0).trimmed();
+        const QString idJusante = colunas.at(1).trimmed();
+        const QString idSecao = (colunas.size() >= 7)
+                                    ? colunas.at(6).trimmed()
+                                    : QString("VTD-1");
+
+        if (idCanal.isEmpty()) {
+            erros << QString("Linha %1 inválida: ID do canal vazio.").arg(i + 1);
+            continue;
+        }
+
+        const QString idNormalizado = idCanal.toUpper();
+        if (idsUnicos.contains(idNormalizado)) {
+            erros << QString("Linha %1 inválida: ID de canal duplicado no CSV.").arg(i + 1);
+            continue;
+        }
+        idsUnicos.insert(idNormalizado);
+
+        const double comprimentoM = std::max(0.0, converterTextoParaNumeroCsv(colunas.at(2)));
+        const double spMinPercentual = std::max(0.0, converterTextoParaNumeroCsv(colunas.at(3)));
+        const double spMaxPercentual = std::max(0.0, converterTextoParaNumeroCsv(colunas.at(4)));
+        const double soFinalPercentual = std::max(0.0, converterTextoParaNumeroCsv(colunas.at(5)));
+
+        Canal canal(idCanal);
+        canal.setIdJusante(idJusante);
+        canal.setComprimento(comprimentoM);
+        canal.setDeclividadeMinima(spMinPercentual / 100.0);
+        canal.setDeclividadeMaxima(spMaxPercentual / 100.0);
+        canal.setDeclividadeFinal(soFinalPercentual / 100.0);
+
+        canaisImportados.append(canal);
+        secoesPorLinha.append(idSecao.isEmpty() ? QString("VTD-1") : idSecao);
+    }
+
+    if (!erros.isEmpty()) {
+        QMessageBox::warning(this,
+                             "Importar CSV",
+                             QString("Foram encontrados erros durante a importação:\n- %1")
+                                 .arg(erros.join("\n- ")));
+        return;
+    }
+
+    if (canaisImportados.isEmpty()) {
+        QMessageBox::warning(this, "Importar CSV", "Nenhum canal válido encontrado no CSV.");
+        return;
+    }
+
+    m_modeloCanais->definirCanais(canaisImportados);
+
+    const int totalSecoes = std::min(m_modeloCanais->rowCount(), static_cast<int>(secoesPorLinha.size()));
+    for (int linha = 0; linha < totalSecoes; ++linha) {
+        m_modeloCanais->setData(
+            m_modeloCanais->index(linha, ModeloTabelaCanais::ColunaSecaoTransversal),
+            secoesPorLinha.at(linha),
+            Qt::EditRole);
+    }
+
+    if (m_tabelaPorChave.contains(kAbaCanais)) {
+        ajustarLarguraColunasTabela(m_tabelaPorChave.value(kAbaCanais));
+    }
+
+    calcularResultadosModelo();
+    statusBar()->showMessage("Canais importados com sucesso do CSV.", 3000);
+}
+
+void MainWindow::configurarAcoesCalculo()
+{
+    m_acaoCalcularResultados = new QAction("Calcular resultados", this);
+    m_acaoCalcularResultados->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+
+    connect(m_acaoCalcularResultados, &QAction::triggered,
+            this,
+            [this]() {
+                calcularResultadosModelo();
+                statusBar()->showMessage("Resultados recalculados com sucesso.", 2500);
+            });
+
+    QToolBar* barraCalculo = addToolBar("Resultados");
+    barraCalculo->setMovable(false);
+    barraCalculo->addAction(m_acaoCalcularResultados);
 }
 
 void MainWindow::mostrarMenuContextoArvore(const QPoint& posicao)
 {
-    QTreeWidgetItem* itemSelecionado = m_arvoreRede->itemAt(posicao);
-    if (!itemSelecionado) {
-        itemSelecionado = m_arvoreRede->currentItem();
-    }
-    if (!itemSelecionado) {
-        return;
-    }
+    if (!m_arvoreModelo) return;
 
-    m_arvoreRede->setCurrentItem(itemSelecionado);
-    const bool podeReceberFilhos = (itemSelecionado->childCount() > 0) || (itemSelecionado == m_arvoreRede->topLevelItem(0));
-
-    QMenu menuContexto(this);
-    auto* acaoNovoItem = menuContexto.addAction(style()->standardIcon(QStyle::SP_FileIcon), "Novo Item...");
-    auto* acaoNovoGrupo = menuContexto.addAction(style()->standardIcon(QStyle::SP_DirClosedIcon), "Adicionar Novo Grupo");
-    menuContexto.addSeparator();
-    auto* acaoOrdenarAsc = menuContexto.addAction("Ordenar Crescente");
-    auto* acaoOrdenarDesc = menuContexto.addAction("Ordenar Decrescente");
-
-    acaoNovoItem->setEnabled(podeReceberFilhos);
-    acaoNovoGrupo->setEnabled(podeReceberFilhos);
-
-    QAction* acaoSelecionada = menuContexto.exec(m_arvoreRede->viewport()->mapToGlobal(posicao));
-    if (!acaoSelecionada) {
-        return;
+    QModelIndex indice = m_arvoreModelo->indexAt(posicao);
+    if (!indice.isValid()) {
+        indice = m_arvoreModelo->currentIndex();
     }
 
-    if (acaoSelecionada == acaoNovoItem) {
-        QTreeWidgetItem* novoItem = adicionarElementoArvore(
-            itemSelecionado,
-            "item_usuario",
-            "Novo item",
-            "Item do projeto",
-            "Item criado a partir do menu de contexto do explorador.",
-            {
-                {"Tipo", "Item do projeto"},
-                {"Origem", "Criado manualmente"},
-                {"Pai", itemSelecionado->text(0)}
-            });
-        itemSelecionado->setExpanded(true);
-        m_arvoreRede->setCurrentItem(novoItem);
-        statusBar()->showMessage("Novo item adicionado ao explorador.", 4000);
-    } else if (acaoSelecionada == acaoNovoGrupo) {
-        QTreeWidgetItem* novoGrupo = adicionarElementoArvore(
-            itemSelecionado,
-            "grupo_usuario",
-            "Novo grupo",
-            "Grupo do projeto",
-            "Grupo criado para organizar novos subitens do projeto.",
-            {
-                {"Tipo", "Grupo do projeto"},
-                {"Origem", "Criado manualmente"},
-                {"Pai", itemSelecionado->text(0)}
-            },
-            true);
-        itemSelecionado->setExpanded(true);
-        m_arvoreRede->setCurrentItem(novoGrupo);
-        statusBar()->showMessage("Novo grupo adicionado ao explorador.", 4000);
-    } else if (acaoSelecionada == acaoOrdenarAsc) {
-        itemSelecionado->sortChildren(0, Qt::AscendingOrder);
-        statusBar()->showMessage("Itens ordenados em ordem crescente.", 3000);
-    } else if (acaoSelecionada == acaoOrdenarDesc) {
-        itemSelecionado->sortChildren(0, Qt::DescendingOrder);
-        statusBar()->showMessage("Itens ordenados em ordem decrescente.", 3000);
+    const QString tipo = indice.data(kRoleTipoItem).toString();
+    const bool emResultados = (tipo == "resultados"
+                               || tipo == "resultados_canais"
+                               || tipo == "resultados_bacias");
+    if (!emResultados) return;
+
+    QMenu menu(this);
+    QAction* acaoCalcular = menu.addAction("Calcular resultados");
+
+    const QAction* acaoSelecionada = menu.exec(m_arvoreModelo->viewport()->mapToGlobal(posicao));
+    if (acaoSelecionada == acaoCalcular) {
+        calcularResultadosModelo();
+        statusBar()->showMessage("Resultados recalculados com sucesso.", 2500);
     }
 }
 
-QString MainWindow::gerarIdElemento(const QString& prefixo) const
+void MainWindow::atualizarModeloResultadosCanais()
 {
-    int indice = m_elementos.size() + 1;
-    QString id;
-    do {
-        id = QString("%1_%2").arg(prefixo).arg(indice++);
-    } while (m_elementos.contains(id));
-    return id;
+    if (!m_modeloResultadosCanais || !m_modeloCanais) return;
+
+    RedeHidrologica rede;
+    // Registra elementos primeiro sem conexão jusante e conecta em seguida.
+    QMap<QString, QString> jusantePorElemento;
+
+    for (const Canal& canal : m_modeloCanais->canais()) {
+        Canal canalSemConexao = canal;
+        jusantePorElemento.insert(canalSemConexao.id(), canal.idJusante());
+        canalSemConexao.setIdJusante(QString());
+        rede.adicionarCanal(canalSemConexao);
+    }
+
+    for (const BaciaContribuicao& bacia : m_modeloBacias->bacias()) {
+        BaciaContribuicao baciaSemConexao = bacia;
+        jusantePorElemento.insert(baciaSemConexao.id(), bacia.idJusante());
+        baciaSemConexao.setIdJusante(QString());
+        rede.adicionarBacia(baciaSemConexao);
+    }
+
+    for (auto it = jusantePorElemento.cbegin(); it != jusantePorElemento.cend(); ++it) {
+        if (it.value().trimmed().isEmpty()) continue;
+        rede.definirJusanteElemento(it.key(), it.value());
+    }
+
+    const IDF idf(279.63, 0.00, 0.524, 0.00);
+    const double tempoRetornoAnos = 50.0;
+
+    m_modeloResultadosCanais->clear();
+    m_modeloResultadosCanais->setHorizontalHeaderLabels(
+        { "ID", "A_total (m\u00B2)", "L_talvegue_total (m)", "S_talvegue_total (%)", "Cmed", "Tc_Atotal (Kirpich-modificado)",
+          "I_Atotal_TR (mm/h)", "Qp (dimensionamento)", "Se\u00E7\u00E3o",
+          "Hn_Sp(min)", "T_Sp(min)", "Pm_Sp(min)", "Am_Sp(min)", "Rh_Sp(min)", "Ph_Sp(min)", "Folga_Sp(min)", "V_Sp(min)", "A(%)_Sp(min)", "Fr_V_Sp(min)", "tau_o_min",
+          "Hn_Sp(max)", "T_Sp(max)", "Pm_Sp(max)", "Am_Sp(max)", "Rh_Sp(max)", "Ph_Sp(max)", "Folga_Sp(max)", "V_Sp(max)", "A(%)_Sp(max)", "Fr_V_Sp(max)", "tau_o_max",
+          "Hn_Sp(final)", "V_Sp(final)", "tau_o_final" });
+
+    const QVector<Canal>& canais = m_modeloCanais->canais();
+    for (int linha = 0; linha < canais.size(); ++linha) {
+        const Canal& canal = canais.at(linha);
+        const QString idSecao = m_modeloCanais->idSecaoPorLinha(linha);
+        const QString idCanal = canal.id();
+
+        double lTalvegueCriticoKm = 0.0;
+        double declividadeTalvegueCritica = 0.0;
+        rede.calcularTalvegueCriticoAteElemento(idCanal, &lTalvegueCriticoKm, &declividadeTalvegueCritica);
+
+        const double areaTotalKm2 = std::max(0.0, rede.areaAcumuladaTotalContribuinte(idCanal));
+        const double areaTotalM2 = areaTotalKm2 * 1e6;
+        const double lTalvegueTotalM = std::max(0.0, lTalvegueCriticoKm) * 1000.0;
+        const double cMedio = std::max(0.0, rede.coeficienteEscoamentoMedioPonderado(idCanal));
+        const double tcAtotalMin = std::max(0.0, rede.tempoConcentracaoKirpichModificadoAreaTotal(idCanal));
+        const double intensidadeMmH = std::max(0.0, idf.intensidadeMmH(tempoRetornoAnos, tcAtotalMin));
+        const double qDimensionamento = std::max(0.0, 0.278 * cMedio * intensidadeMmH * areaTotalKm2);
+
+        const double sTalvegueTotalPercentual = std::max(0.0, declividadeTalvegueCritica) * 100.0;
+
+        const double alturaMaxSecaoM = std::max(1e-6, alturaMaximaSecaoPorId(idSecao, m_modeloSecoes));
+
+        Canal canalMin = canal;
+        aplicarSecaoTransversalNoCanal(&canalMin, idSecao, m_modeloSecoes);
+        canalMin.setDeclividadeFinal(canal.declividadeMinima());
+        const double hMin = canalMin.alturaLaminaParaVazaoProjeto(qDimensionamento);
+        const double tMin = canalMin.larguraSuperficial(hMin);
+        const double pMin = canalMin.perimetroMolhado(hMin);
+        const double aMin = canalMin.areaMolhada(hMin);
+        const double rhMin = canalMin.raioHidraulico(hMin);
+        const double folgaMin = std::max(0.0, alturaMaxSecaoM - std::max(0.0, hMin));
+        const double vMin = canalMin.velocidadeManning(hMin);
+        const double ocupacaoMin = std::max(0.0, hMin) / alturaMaxSecaoM * 100.0;
+        const double frMin = calcularFroude(vMin, aMin, tMin);
+        const double tauMin = calcularTensaoCisalhantePa(rhMin, std::max(0.0, canal.declividadeMinima()));
+
+        Canal canalMax = canal;
+        aplicarSecaoTransversalNoCanal(&canalMax, idSecao, m_modeloSecoes);
+        canalMax.setDeclividadeFinal(canal.declividadeMaxima());
+        const double hMax = canalMax.alturaLaminaParaVazaoProjeto(qDimensionamento);
+        const double tMax = canalMax.larguraSuperficial(hMax);
+        const double pMax = canalMax.perimetroMolhado(hMax);
+        const double aMax = canalMax.areaMolhada(hMax);
+        const double rhMax = canalMax.raioHidraulico(hMax);
+        const double folgaMax = std::max(0.0, alturaMaxSecaoM - std::max(0.0, hMax));
+        const double vMax = canalMax.velocidadeManning(hMax);
+        const double ocupacaoMax = std::max(0.0, hMax) / alturaMaxSecaoM * 100.0;
+        const double frMax = calcularFroude(vMax, aMax, tMax);
+        const double tauMax = calcularTensaoCisalhantePa(rhMax, std::max(0.0, canal.declividadeMaxima()));
+
+        Canal canalFinal = canal;
+        aplicarSecaoTransversalNoCanal(&canalFinal, idSecao, m_modeloSecoes);
+        canalFinal.setDeclividadeFinal(canal.declividadeFinal());
+        const double hFinal = canalFinal.alturaLaminaParaVazaoProjeto(qDimensionamento);
+        const double vFinal = canalFinal.velocidadeManning(hFinal);
+        const double rhFinal = canalFinal.raioHidraulico(hFinal);
+        const double tauFinal = calcularTensaoCisalhantePa(rhFinal, std::max(0.0, canal.declividadeFinal()));
+
+        auto textoNumero = [](double valor, int casas = 3) {
+            return std::isfinite(valor)
+                       ? QString::number(valor, 'f', casas)
+                       : QString("n/d");
+        };
+
+        QList<QStandardItem*> itensLinha;
+        itensLinha << new QStandardItem(canal.id())
+                   << new QStandardItem(textoNumero(areaTotalM2, 2))
+                   << new QStandardItem(textoNumero(lTalvegueTotalM, 2))
+                   << new QStandardItem(textoNumero(sTalvegueTotalPercentual, 3))
+                   << new QStandardItem(textoNumero(cMedio, 3))
+                   << new QStandardItem(textoNumero(tcAtotalMin, 2))
+                   << new QStandardItem(textoNumero(intensidadeMmH, 2))
+                   << new QStandardItem(textoNumero(qDimensionamento, 3))
+                   << new QStandardItem(idSecao)
+                   << new QStandardItem(textoNumero(hMin, 3))
+                   << new QStandardItem(textoNumero(tMin, 3))
+                   << new QStandardItem(textoNumero(pMin, 3))
+                   << new QStandardItem(textoNumero(aMin, 3))
+                   << new QStandardItem(textoNumero(rhMin, 3))
+                   << new QStandardItem(textoNumero(pMin, 3))
+                   << new QStandardItem(textoNumero(folgaMin, 3))
+                   << new QStandardItem(textoNumero(vMin, 3))
+                   << new QStandardItem(textoNumero(ocupacaoMin, 2))
+                   << new QStandardItem(textoNumero(frMin, 3))
+                   << new QStandardItem(textoNumero(tauMin, 2))
+                   << new QStandardItem(textoNumero(hMax, 3))
+                   << new QStandardItem(textoNumero(tMax, 3))
+                   << new QStandardItem(textoNumero(pMax, 3))
+                   << new QStandardItem(textoNumero(aMax, 3))
+                   << new QStandardItem(textoNumero(rhMax, 3))
+                   << new QStandardItem(textoNumero(pMax, 3))
+                   << new QStandardItem(textoNumero(folgaMax, 3))
+                   << new QStandardItem(textoNumero(vMax, 3))
+                   << new QStandardItem(textoNumero(ocupacaoMax, 2))
+                   << new QStandardItem(textoNumero(frMax, 3))
+                   << new QStandardItem(textoNumero(tauMax, 2))
+                   << new QStandardItem(textoNumero(hFinal, 3))
+                   << new QStandardItem(textoNumero(vFinal, 3))
+                   << new QStandardItem(textoNumero(tauFinal, 2));
+
+        for (QStandardItem* item : itensLinha) {
+            item->setEditable(false);
+        }
+
+        m_modeloResultadosCanais->appendRow(itensLinha);
+    }
+
+    if (m_tabelaPorChave.contains(kAbaResultadosCanais)) {
+        configurarVisibilidadeColunasResultadosCanais(m_tabelaPorChave.value(kAbaResultadosCanais), "geral");
+        ajustarLarguraColunasTabela(m_tabelaPorChave.value(kAbaResultadosCanais));
+    }
+    if (m_tabelaPorChave.contains(kAbaResultadosCanaisDeclividadeMinima)) {
+        configurarVisibilidadeColunasResultadosCanais(m_tabelaPorChave.value(kAbaResultadosCanaisDeclividadeMinima), "min");
+        ajustarLarguraColunasTabela(m_tabelaPorChave.value(kAbaResultadosCanaisDeclividadeMinima));
+    }
+    if (m_tabelaPorChave.contains(kAbaResultadosCanaisDeclividadeMaxima)) {
+        configurarVisibilidadeColunasResultadosCanais(m_tabelaPorChave.value(kAbaResultadosCanaisDeclividadeMaxima), "max");
+        ajustarLarguraColunasTabela(m_tabelaPorChave.value(kAbaResultadosCanaisDeclividadeMaxima));
+    }
+    if (m_tabelaPorChave.contains(kAbaResultadosCanaisDeclividadeFinal)) {
+        configurarVisibilidadeColunasResultadosCanais(m_tabelaPorChave.value(kAbaResultadosCanaisDeclividadeFinal), "final");
+        ajustarLarguraColunasTabela(m_tabelaPorChave.value(kAbaResultadosCanaisDeclividadeFinal));
+    }
 }
 
-QTreeWidgetItem* MainWindow::adicionarElementoArvore(QTreeWidgetItem* pai,
-                                                     const QString& prefixo,
-                                                     const QString& nome,
-                                                     const QString& tipo,
-                                                     const QString& resumo,
-                                                     const QVector<PropriedadeElemento>& propriedades,
-                                                     bool comoGrupo)
+void MainWindow::atualizarModeloResultadosBacias()
 {
-    const QString id = gerarIdElemento(prefixo);
+    if (!m_modeloResultadosBacias || !m_modeloBacias) return;
 
-    ElementoApresentacao elemento;
-    elemento.id = id;
-    elemento.nome = QString("%1 %2").arg(nome).arg(m_elementos.size());
-    elemento.tipo = tipo;
-    elemento.resumo = resumo;
-    elemento.propriedades = propriedades;
-    m_elementos.insert(id, elemento);
+    m_modeloResultadosBacias->clear();
+    m_modeloResultadosBacias->setHorizontalHeaderLabels(
+        { "ID", "ID Jusante", "\u00C1rea (km\u00B2)", "Declividade m\u00E9dia", "L_talvegue (km)", "Tc local (min)", "Q racional (i=100 mm/h)" });
 
-    auto* item = new QTreeWidgetItem(QStringList() << elemento.nome);
-    item->setData(0, kRoleElementoId, id);
-    item->setToolTip(0, tipo);
-    item->setIcon(0, style()->standardIcon(comoGrupo ? QStyle::SP_DirClosedIcon : QStyle::SP_FileIcon));
-    pai->addChild(item);
+    const QVector<BaciaContribuicao>& bacias = m_modeloBacias->bacias();
+    for (const BaciaContribuicao& bacia : bacias) {
+        const double tcLocalMin = bacia.tempoConcentracaoKirpichModificado(0.0);
+        const double qRacional = bacia.calcularContribuicaoRacional(100.0);
+
+        QList<QStandardItem*> itensLinha;
+        itensLinha << new QStandardItem(bacia.id())
+                   << new QStandardItem(bacia.idJusante())
+                   << new QStandardItem(QString::number(bacia.areaKm2(), 'f', 3))
+                   << new QStandardItem(QString::number(bacia.declividadeMedia(), 'f', 4))
+                   << new QStandardItem(QString::number(bacia.comprimentoTalveguePrincipalKm(), 'f', 3))
+                   << new QStandardItem(QString::number(tcLocalMin, 'f', 2))
+                   << new QStandardItem(QString::number(qRacional, 'f', 3));
+
+        for (QStandardItem* item : itensLinha) {
+            item->setEditable(false);
+        }
+
+        m_modeloResultadosBacias->appendRow(itensLinha);
+    }
+
+    if (m_tabelaPorChave.contains(kAbaResultadosBacias)) {
+        ajustarLarguraColunasTabela(m_tabelaPorChave.value(kAbaResultadosBacias));
+    }
+}
+
+void MainWindow::configurarAcaoAdicionarCanal(QTableView* tabela)
+{
+    if (!tabela || !m_modeloCanais) return;
+
+    connect(tabela, &QWidget::customContextMenuRequested, this, [this, tabela](const QPoint& posicao) {
+        const QModelIndex indiceClicado = tabela->indexAt(posicao);
+        if (indiceClicado.isValid()) {
+            tabela->setCurrentIndex(indiceClicado);
+        }
+
+        QMenu menu(this);
+        QAction* acaoAdicionar = menu.addAction("Adicionar novo canal");
+        QAction* acaoRemover = menu.addAction("Remover canal da linha atual");
+
+        const bool linhaValidaSelecionada = tabela->currentIndex().isValid();
+        acaoRemover->setEnabled(linhaValidaSelecionada);
+
+        const QAction* acaoSelecionada = menu.exec(tabela->viewport()->mapToGlobal(posicao));
+        if (acaoSelecionada == acaoRemover) {
+            const QModelIndex indiceAtual = tabela->currentIndex();
+            if (!indiceAtual.isValid()) return;
+
+            const int linhaRemocao = indiceAtual.row();
+            QString mensagemErro;
+            if (!m_modeloCanais->removerCanal(linhaRemocao, &mensagemErro)) {
+                QMessageBox::warning(this, "Remover canal", mensagemErro);
+                return;
+            }
+
+            statusBar()->showMessage("Canal removido da tabela.", 2000);
+            return;
+        }
+
+        if (acaoSelecionada != acaoAdicionar) return;
+
+        while (true) {
+            bool confirmou = false;
+            const QString idCanal = QInputDialog::getText(
+                this,
+                "Novo canal",
+                "Informe o ID do novo canal:",
+                QLineEdit::Normal,
+                QString(),
+                &confirmou).trimmed();
+
+            if (!confirmou) return;
+
+            QString mensagemErro;
+            if (m_modeloCanais->adicionarCanal(idCanal, &mensagemErro)) {
+                const int linhaNova = m_modeloCanais->rowCount() - 1;
+                tabela->setCurrentIndex(m_modeloCanais->index(linhaNova, ModeloTabelaCanais::ColunaSecaoTransversal));
+                tabela->edit(m_modeloCanais->index(linhaNova, ModeloTabelaCanais::ColunaSecaoTransversal));
+                return;
+            }
+
+            QMessageBox::warning(this, "Novo canal", mensagemErro);
+        }
+    });
+}
+
+void MainWindow::configurarAcaoAdicionarBacia(QTableView* tabela)
+{
+    if (!tabela || !m_modeloBacias) return;
+
+    connect(tabela, &QWidget::customContextMenuRequested, this, [this, tabela](const QPoint& posicao) {
+        const QModelIndex indiceClicado = tabela->indexAt(posicao);
+        if (indiceClicado.isValid()) {
+            tabela->setCurrentIndex(indiceClicado);
+        }
+
+        QMenu menu(this);
+        QAction* acaoAdicionar = menu.addAction("Adicionar nova bacia");
+        QAction* acaoRemover = menu.addAction("Remover bacia da linha atual");
+
+        const bool linhaValidaSelecionada = tabela->currentIndex().isValid();
+        acaoRemover->setEnabled(linhaValidaSelecionada);
+
+        const QAction* acaoSelecionada = menu.exec(tabela->viewport()->mapToGlobal(posicao));
+        if (acaoSelecionada == acaoRemover) {
+            const QModelIndex indiceAtual = tabela->currentIndex();
+            if (!indiceAtual.isValid()) return;
+
+            const int linhaRemocao = indiceAtual.row();
+            QString mensagemErro;
+            if (!m_modeloBacias->removerBacia(linhaRemocao, &mensagemErro)) {
+                QMessageBox::warning(this, "Remover bacia", mensagemErro);
+                return;
+            }
+
+            statusBar()->showMessage("Bacia removida da tabela.", 2000);
+            return;
+        }
+
+        if (acaoSelecionada != acaoAdicionar) return;
+
+        while (true) {
+            bool confirmouBacia = false;
+            const QString nomeBacia = QInputDialog::getText(
+                this,
+                "Nova bacia",
+                "Informe o nome da bacia:",
+                QLineEdit::Normal,
+                QString(),
+                &confirmouBacia).trimmed();
+
+            if (!confirmouBacia) return;
+
+            bool confirmouSubbacia = false;
+            const QString nomeSubbacia = QInputDialog::getText(
+                this,
+                "Nova bacia",
+                "Informe o nome da subbacia:",
+                QLineEdit::Normal,
+                QString(),
+                &confirmouSubbacia).trimmed();
+
+            if (!confirmouSubbacia) return;
+
+            QString mensagemErro;
+            if (m_modeloBacias->adicionarBacia(nomeBacia, nomeSubbacia, &mensagemErro)) {
+                const int linhaNova = m_modeloBacias->rowCount() - 1;
+                tabela->setCurrentIndex(m_modeloBacias->index(linhaNova, ModeloTabelaBacias::ColunaIdJusante));
+                return;
+            }
+
+            QMessageBox::warning(this, "Nova bacia", mensagemErro);
+        }
+    });
+}
+
+QStandardItem* MainWindow::criarItemArvore(QStandardItem* pai,
+                                           const QString& texto,
+                                           const QString& tipo,
+                                           const QIcon& icone) const
+{
+    if (!pai) return nullptr;
+
+    auto* item = new QStandardItem(icone, texto);
+    item->setData(tipo, kRoleTipoItem);
+    item->setEditable(false);
+    pai->appendRow(item);
     return item;
 }
 
-QString MainWindow::chaveElemento(QTreeWidgetItem* item) const
+QVector<Canal> MainWindow::criarCanaisExemplo() const
 {
-    if (!item) {
-        return {};
-    }
+    // Baseado no cenário manual de `RedeHidrologicaTesteManual`.
+    Canal d041("D04.1-ACO");
+    d041.setIdJusante("D04.2-ACO");
+    d041.setComprimento(110.00);
+    d041.setDeclividadeMinima(2.85 / 100.0);
+    d041.setDeclividadeMaxima(9.10 / 100.0);
+    d041.setDeclividadeFinal(9.10 / 100.0);
+    d041.setCoeficienteManning(0.015);
 
-    return item->data(0, kRoleElementoId).toString();
+    Canal d042("D04.2-ACO");
+    d042.setIdJusante("D04.3-ACO");
+    d042.setComprimento(17.00);
+    d042.setDeclividadeMinima(9.10 / 100.0);
+    d042.setDeclividadeMaxima(11.60 / 100.0);
+    d042.setDeclividadeFinal(11.60 / 100.0);
+    d042.setCoeficienteManning(0.015);
+
+    Canal d043("D04.3-ACO");
+    d043.setIdJusante("D04.4-ACO");
+    d043.setComprimento(89.32);
+    d043.setDeclividadeMinima(3.50 / 100.0);
+    d043.setDeclividadeMaxima(11.60 / 100.0);
+    d043.setDeclividadeFinal(11.60 / 100.0);
+    d043.setCoeficienteManning(0.015);
+
+    Canal d044("D04.4-ACO");
+    d044.setIdJusante("C04-ACO");
+    d044.setComprimento(64.00);
+    d044.setDeclividadeMinima(4.00 / 100.0);
+    d044.setDeclividadeMaxima(8.50 / 100.0);
+    d044.setDeclividadeFinal(8.50 / 100.0);
+    d044.setCoeficienteManning(0.015);
+
+    Canal d051("D05.1-ACO");
+    d051.setIdJusante("D05.2-ACO");
+    d051.setComprimento(47.00);
+    d051.setDeclividadeMinima(3.00 / 100.0);
+    d051.setDeclividadeMaxima(13.50 / 100.0);
+    d051.setDeclividadeFinal(13.50 / 100.0);
+    d051.setCoeficienteManning(0.015);
+
+    Canal d052("D05.2-ACO");
+    d052.setIdJusante("C03-ACO");
+    d052.setComprimento(86.00);
+    d052.setDeclividadeMinima(9.60 / 100.0);
+    d052.setDeclividadeMaxima(15.80 / 100.0);
+    d052.setDeclividadeFinal(15.80 / 100.0);
+    d052.setCoeficienteManning(0.015);
+
+    Canal d061("D06.1-ACO");
+    d061.setIdJusante("EX-B1");
+    d061.setComprimento(115.00);
+    d061.setDeclividadeMinima(5.40 / 100.0);
+    d061.setDeclividadeMaxima(14.50 / 100.0);
+    d061.setDeclividadeFinal(14.50 / 100.0);
+    d061.setCoeficienteManning(0.015);
+
+    Canal d031("D03.1-ACO");
+    d031.setIdJusante("C01-ACO");
+    d031.setComprimento(50.00);
+    d031.setDeclividadeMinima(3.00 / 100.0);
+    d031.setDeclividadeMaxima(6.50 / 100.0);
+    d031.setDeclividadeFinal(6.50 / 100.0);
+    d031.setCoeficienteManning(0.015);
+
+    Canal d021("D02.1-ACO");
+    d021.setIdJusante("C01-ACO");
+    d021.setComprimento(30.00);
+    d021.setDeclividadeMinima(3.50 / 100.0);
+    d021.setDeclividadeMaxima(5.00 / 100.0);
+    d021.setDeclividadeFinal(5.00 / 100.0);
+    d021.setCoeficienteManning(0.025);
+
+    Canal d011("D01.1-ACO");
+    d011.setIdJusante("C02-ACO");
+    d011.setComprimento(40.00);
+    d011.setDeclividadeMinima(1.00 / 100.0);
+    d011.setDeclividadeMaxima(4.90 / 100.0);
+    d011.setDeclividadeFinal(4.90 / 100.0);
+    d011.setCoeficienteManning(0.015);
+
+    return { d041, d042, d043, d044, d051, d052, d061, d031, d021, d011 };
+}
+
+QVector<BaciaContribuicao> MainWindow::criarBaciasExemplo() const
+{
+    // Baseado no cenário manual de `RedeHidrologicaTesteManual`.
+    BaciaContribuicao sb01("BACIA01-SB01");
+    sb01.setIdJusante("D04.1-ACO");
+    sb01.setAreaKm2(5445.88 / 1e6);
+    sb01.setDeclividadeMedia(16.00 / 100.0);
+    sb01.setComprimentoTalveguePrincipalKm(74.69 / 1000.0);
+    sb01.setC_10(0.6);
+
+    BaciaContribuicao sb02("BACIA01-SB02");
+    sb02.setIdJusante("D04.2-ACO");
+    sb02.setAreaKm2(1244.39 / 1e6);
+    sb02.setDeclividadeMedia(12.18 / 100.0);
+    sb02.setComprimentoTalveguePrincipalKm(53.99 / 1000.0);
+    sb02.setC_10(0.6);
+
+    BaciaContribuicao sb03("BACIA01-SB03");
+    sb03.setIdJusante("D04.3-ACO");
+    sb03.setAreaKm2(10347.64 / 1e6);
+    sb03.setDeclividadeMedia(12.18 / 100.0);
+    sb03.setComprimentoTalveguePrincipalKm(140.97 / 1000.0);
+    sb03.setC_10(0.6);
+
+    BaciaContribuicao sb04("BACIA01-SB04");
+    sb04.setIdJusante("D04.4-ACO");
+    sb04.setAreaKm2(12175.37 / 1e6);
+    sb04.setDeclividadeMedia(12.18 / 100.0);
+    sb04.setComprimentoTalveguePrincipalKm(134.71 / 1000.0);
+    sb04.setC_10(0.6);
+
+    BaciaContribuicao sb032("BACIA03-SB02");
+    sb032.setIdJusante("D02.1-ACO");
+    sb032.setAreaKm2(1338.67 / 1e6);
+    sb032.setDeclividadeMedia(11.78 / 100.0);
+    sb032.setComprimentoTalveguePrincipalKm(38.78 / 1000.0);
+    sb032.setC_10(0.6);
+
+    BaciaContribuicao sb031("BACIA03-SB01");
+    sb031.setIdJusante("D03.1-ACO");
+    sb031.setAreaKm2(24281.00 / 1e6);
+    sb031.setDeclividadeMedia(11.20 / 100.0);
+    sb031.setComprimentoTalveguePrincipalKm(244.00 / 1000.0);
+    sb031.setC_10(0.6);
+
+    BaciaContribuicao sb021("BACIA02-SB01");
+    sb021.setIdJusante("D01.1-ACO");
+    sb021.setAreaKm2(7855.00 / 1e6);
+    sb021.setDeclividadeMedia(9.80 / 100.0);
+    sb021.setComprimentoTalveguePrincipalKm(168.89 / 1000.0);
+    sb021.setC_10(0.6);
+
+    BaciaContribuicao sb05("BACIA01-SB05");
+    sb05.setIdJusante("D05.1-ACO");
+    sb05.setAreaKm2(2043.70 / 1e6);
+    sb05.setDeclividadeMedia(19.20 / 100.0);
+    sb05.setComprimentoTalveguePrincipalKm(54.45 / 1000.0);
+    sb05.setC_10(0.6);
+
+    BaciaContribuicao sb06("BACIA01-SB06");
+    sb06.setIdJusante("D05.2-ACO");
+    sb06.setAreaKm2(11729.73 / 1e6);
+    sb06.setDeclividadeMedia(18.00 / 100.0);
+    sb06.setComprimentoTalveguePrincipalKm(117.00 / 1000.0);
+    sb06.setC_10(0.6);
+
+    BaciaContribuicao sb07("BACIA01-SB07");
+    sb07.setIdJusante("D06.1-ACO");
+    sb07.setAreaKm2(2854.25 / 1e6);
+    sb07.setDeclividadeMedia(8.00 / 100.0);
+    sb07.setComprimentoTalveguePrincipalKm(59.97 / 1000.0);
+    sb07.setC_10(0.6);
+
+    return { sb01, sb02, sb03, sb04, sb032, sb031, sb021, sb05, sb06, sb07 };
 }
 
 

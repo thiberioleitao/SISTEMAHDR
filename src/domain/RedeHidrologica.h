@@ -55,10 +55,17 @@ public:
     double intensidadeChuvaProjetoMmH() const;
     void setIntensidadeChuvaProjetoMmH(double intensidadeChuvaProjetoMmH);
 
+    double tempoConcentracaoMinimoMin() const;
+    void setTempoConcentracaoMinimoMin(double tempoConcentracaoMinimoMin);
+
     double contribuicaoBaciasParaElemento(const QString& idElemento,
                                           double intensidadeChuvaBrutaMmH) const;
 
     double calcularComprimentoTotalTalvegueAteElemento(const QString& idElemento) const;
+
+    bool calcularTalvegueCriticoAteElemento(const QString& idElemento,
+                                            double* comprimentoTalvegueKm,
+                                            double* declividadeEquivalente) const;
 
     QMap<QString, double> calcularVazaoAcumuladaPorElemento(
         const QMap<QString, double>& contribuicaoPorElemento = QMap<QString, double>()) const;
@@ -98,4 +105,5 @@ private:
     QMap<QString, Bueiro> m_bueirosPorId;
     QMap<QString, Canal> m_canaisPorId;
     double m_intensidadeChuvaProjetoMmH = 0.0;
+    double m_tempoConcentracaoMinimoMin = 5.0;
 };

@@ -26,11 +26,20 @@ add_executable(SISTEMAHDR
     src/main.cpp
     src/ui/MainWindow.cpp
     src/ui/CanalTrapezoidalWidget.cpp
+    src/ui/modelos/ModeloTabelaCanais.cpp
+    src/ui/modelos/ModeloTabelaBacias.cpp
+    src/ui/modelos/ModeloTabelaSecoesTransversais.cpp
+    src/ui/modelos/ModeloTabelaUsoOcupacaoSolo.cpp
+    src/ui/delegates/DelegadoGeometriaSecaoComboBox.cpp
+    src/ui/delegates/DelegadoSecaoTransversalComboBox.cpp
+    src/ui/delegates/DelegadoUsoOcupacaoSoloComboBox.cpp
     src/domain/Canal.cpp
     src/domain/Bueiro.cpp
     src/domain/BaciaContribuicao.cpp
+    src/domain/TipoUsoOcupacaoSolo.cpp
     src/domain/IDF.cpp
     src/domain/MetodoRacionalTransformacao.cpp
+    src/domain/HidrologiaUtils.cpp
     src/domain/RegistroElementosRede.cpp
     src/domain/RedeHidrologicaTesteManual.cpp
     src/domain/RedeHidrologica.cpp
@@ -41,9 +50,11 @@ add_executable(SISTEMAHDR
     src/domain/Canal.h
     src/domain/Bueiro.h
     src/domain/BaciaContribuicao.h
+    src/domain/TipoUsoOcupacaoSolo.h
     
     src/domain/IDF.h
     src/domain/MetodoRacionalTransformacao.h
+    src/domain/HidrologiaUtils.h
     src/domain/RegistroElementosRede.h
     src/domain/RedeHidrologicaTesteManual.h
     src/domain/RedeHidrologica.h
@@ -52,6 +63,13 @@ add_executable(SISTEMAHDR
     src/domain/SecaoTransversalSemicircular.h
     src/domain/RevestimentoCanal.h
     src/ui/CanalTrapezoidalWidget.h
+    src/ui/modelos/ModeloTabelaCanais.h
+    src/ui/modelos/ModeloTabelaBacias.h
+    src/ui/modelos/ModeloTabelaSecoesTransversais.h
+    src/ui/modelos/ModeloTabelaUsoOcupacaoSolo.h
+    src/ui/delegates/DelegadoGeometriaSecaoComboBox.h
+    src/ui/delegates/DelegadoSecaoTransversalComboBox.h
+    src/ui/delegates/DelegadoUsoOcupacaoSoloComboBox.h
 )
 
 target_include_directories(SISTEMAHDR PRIVATE
@@ -61,3 +79,8 @@ target_include_directories(SISTEMAHDR PRIVATE
 target_link_libraries(SISTEMAHDR
     Qt6::Widgets
 )
+
+if (MSVC)
+    # Garante leitura de fonte e literais em UTF-8 no compilador da Microsoft.
+    target_compile_options(SISTEMAHDR PRIVATE /utf-8)
+endif()
