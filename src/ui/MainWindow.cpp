@@ -16,12 +16,16 @@
 #include <QAbstractItemView>
 #include <QAbstractItemModel>
 #include <QAction>
+#include <QFrame>
+#include <QGraphicsDropShadowEffect>
 #include <QApplication>
 #include <QClipboard>
 #include <QDockWidget>
+#include <QGridLayout>
 #include <QFile>
 #include <QFileDialog>
 #include <QHeaderView>
+#include <QHBoxLayout>
 #include <QInputDialog>
 #include <QItemSelectionModel>
 #include <QJsonArray>
@@ -29,16 +33,21 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QScrollArea>
 #include <QSet>
 #include <QStandardItem>
 #include <QStandardItemModel>
 #include <QStatusBar>
 #include <QStyle>
+#include <QStyledItemDelegate>
 #include <QShortcut>
 #include <QTabWidget>
 #include <QTableView>
+#include <QTextEdit>
 #include <QToolBar>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -59,11 +68,50 @@ constexpr auto kAbaResultadosCanaisDeclividadeMaxima = "aba_resultados_canais_de
 constexpr auto kAbaResultadosCanaisDeclividadeFinal = "aba_resultados_canais_declividade_final";
 constexpr auto kAbaResultadosBacias = "aba_resultados_bacias";
 
+/**
+ * @brief Aplica sombra suave em widgets destacados da interface.
+ * @param widget Widget que recebera a elevacao visual.
+ */
+void aplicarSombraSuave(QWidget* widget)
+{
+    if (!widget) return;
+
+    auto* sombra = new QGraphicsDropShadowEffect(widget);
+    sombra->setBlurRadius(24);
+    sombra->setOffset(0, 8);
+    sombra->setColor(QColor(31, 78, 121, 28));
+    widget->setGraphicsEffect(sombra);
+}
+
+/**
+ * @brief Retorna o icone padronizado utilizado nas acoes e cards da interface.
+ * @param estilo Estilo ativo da aplicacao.
+ * @param tipo Identificador semantico da acao.
+ * @return Icone configurado para o tipo solicitado.
+ */
+QIcon iconePadrao(QStyle* estilo, const QString& tipo)
+{
+    if (!estilo) return QIcon();
+
+    if (tipo == "novo") return estilo->standardIcon(QStyle::SP_FileIcon);
+    if (tipo == "abrir") return estilo->standardIcon(QStyle::SP_DialogOpenButton);
+    if (tipo == "salvar") return estilo->standardIcon(QStyle::SP_DialogSaveButton);
+    if (tipo == "importar") return estilo->standardIcon(QStyle::SP_ArrowDown);
+    if (tipo == "dados") return estilo->standardIcon(QStyle::SP_DirOpenIcon);
+    if (tipo == "resultados") return estilo->standardIcon(QStyle::SP_DialogApplyButton);
+    if (tipo == "canais") return estilo->standardIcon(QStyle::SP_BrowserReload);
+    if (tipo == "bacias") return estilo->standardIcon(QStyle::SP_DriveNetIcon);
+    if (tipo == "secoes") return estilo->standardIcon(QStyle::SP_FileDialogDetailedView);
+    if (tipo == "solo") return estilo->standardIcon(QStyle::SP_FileDialogListView);
+    if (tipo == "calcular") return estilo->standardIcon(QStyle::SP_MediaPlay);
+    return estilo->standardIcon(QStyle::SP_FileDialogInfoView);
+}
+
 void configurarVisibilidadeColunasResultadosCanais(QTableView* tabela, const QString& modoDeclividade)
 {
     if (!tabela || !tabela->model()) return;
 
-    // Colunas base comuns para todas as visıes de resultados dos canais.
+    // Colunas base comuns para todas as vis√µes de resultados dos canais.
     const QSet<int> colunasBase = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
     QSet<int> colunasPermitidas = colunasBase;
 
@@ -209,6 +257,7 @@ MainWindow::MainWindow(QWidget* parent)
     configurarJanela();
     configurarAreaCentral();
     configurarArvoreModelo();
+    configurarPainelContextual();
 
     m_modeloSecoes = new ModeloTabelaSecoesTransversais(this);
     m_modeloUsoOcupacaoSolo = new ModeloTabelaUsoOcupacaoSolo(this);
@@ -230,24 +279,32 @@ MainWindow::MainWindow(QWidget* parent)
             this,
             [this]() {
                 calcularResultadosModelo();
+                atualizarDashboard();
+                atualizarPainelContextual();
             });
 
     connect(m_modeloBacias, &ModeloTabelaBacias::dadosAlterados,
             this,
             [this]() {
                 calcularResultadosModelo();
+                atualizarDashboard();
+                atualizarPainelContextual();
             });
 
     connect(m_modeloSecoes, &QAbstractItemModel::dataChanged,
             this,
             [this](const QModelIndex&, const QModelIndex&, const QList<int>&) {
                 calcularResultadosModelo();
+                atualizarDashboard();
+                atualizarPainelContextual();
             });
 
     connect(m_modeloSecoes, &QAbstractItemModel::modelReset,
             this,
             [this]() {
                 calcularResultadosModelo();
+                atualizarDashboard();
+                atualizarPainelContextual();
             });
 
     connect(m_modeloUsoOcupacaoSolo, &ModeloTabelaUsoOcupacaoSolo::dadosAlterados,
@@ -255,29 +312,47 @@ MainWindow::MainWindow(QWidget* parent)
             [this]() {
                 m_modeloBacias->sincronizarCoeficienteRunoffPeloUsoOcupacao();
                 calcularResultadosModelo();
+                atualizarPainelContextual();
             });
 
     configurarAcoesProjeto();
     configurarAcoesCalculo();
 
     popularArvoreModelo();
+    atualizarDashboard();
+    atualizarPainelContextual();
 }
 
 void MainWindow::configurarJanela()
 {
-    setWindowTitle("SISTEMAHDR - Modelo Hidrol\u00F3gico");
-    resize(1280, 780);
-    statusBar()->showMessage("Selecione um item em Dados ou Resultados na \u00E1rvore lateral.");
+    setWindowTitle("SISTEMAHDR - Plataforma de Modelagem Hidrol\u00F3gica");
+    resize(1480, 880);
+    setMinimumSize(1240, 760);
+    statusBar()->showMessage("Selecione um m\u00F3dulo na navega\u00E7\u00E3o lateral para editar dados e visualizar resultados.");
 
     setStyleSheet(
         "QMainWindow { background: #eef3f7; }"
-        "QDockWidget::title { background: #1f4e79; color: white; padding: 8px 10px; }"
-        "QTreeView, QTableView { background: white; border: 1px solid #c9d4df; }"
-        "QTreeView::item:selected { background: #d7e8f7; color: #0f2f4a; }"
-        "QTabWidget::pane { border: 1px solid #c9d4df; background: white; }"
-        "QTabBar::tab { background: #dfe8f1; padding: 8px 14px; margin-right: 2px; }"
+        "QStatusBar { background: #f7fafc; color: #486174; border-top: 1px solid #d6e0e8; }"
+        "QToolBar { background: #f7fafc; border: none; spacing: 8px; padding: 10px 18px; }"
+        "QToolButton { background: transparent; color: #244257; border: 1px solid transparent; border-radius: 10px; padding: 8px 12px; }"
+        "QToolButton:hover { background: #e3eef8; border-color: #c6d9ea; }"
+        "QToolButton:pressed { background: #d2e4f4; }"
+        "QDockWidget { color: #234258; font-weight: 600; }"
+        "QDockWidget::title { background: #f7fafc; color: #234258; padding: 12px 16px; border-bottom: 1px solid #d6e0e8; }"
+        "QTreeView, QTableView, QScrollArea, QTextEdit { background: white; border: 1px solid #d7e1e8; border-radius: 14px; }"
+        "QTreeView::item { padding: 8px 6px; margin: 2px 6px; border-radius: 8px; }"
+        "QTreeView::item:hover { background: #edf5fb; }"
+        "QTreeView::item:selected { background: #d8eafb; color: #113554; }"
+        "QTabWidget::pane { border: 1px solid #d7e1e8; border-radius: 16px; background: #fdfefe; top: -1px; }"
+        "QTabBar::tab { background: #e7eef4; color: #4c6679; padding: 10px 16px; margin-right: 6px; border-top-left-radius: 12px; border-top-right-radius: 12px; }"
+        "QTabBar::tab:hover { background: #ddeaf5; color: #244257; }"
         "QTabBar::tab:selected { background: white; color: #143a5a; font-weight: 600; }"
-        "QHeaderView::section { background: #ebf1f6; padding: 6px; border: none; border-bottom: 1px solid #c9d4df; }");
+        "QHeaderView::section { background: #edf3f8; color: #345066; padding: 10px 12px; border: none; border-bottom: 1px solid #d7e1e8; font-weight: 600; }"
+        "QPushButton { border-radius: 12px; padding: 10px 16px; border: 1px solid #c6d7e6; background: white; color: #1f4564; }"
+        "QPushButton:hover { background: #eef5fb; border-color: #a9c5de; }"
+        "QPushButton:pressed { background: #dfeef9; }"
+        "QLineEdit, QDoubleSpinBox, QComboBox { min-height: 34px; border: 1px solid #cfdbe5; border-radius: 10px; padding: 0 10px; background: white; }"
+        "QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color: #4f91c7; }");
 }
 
 void MainWindow::configurarAreaCentral()
@@ -288,24 +363,123 @@ void MainWindow::configurarAreaCentral()
 
     m_paginaInicial = new QWidget(m_abasCentrais);
     auto* layoutInicial = new QVBoxLayout(m_paginaInicial);
-    layoutInicial->setContentsMargins(32, 32, 32, 32);
-    layoutInicial->setSpacing(10);
+    layoutInicial->setContentsMargins(36, 36, 36, 36);
+    layoutInicial->setSpacing(24);
 
-    auto* titulo = new QLabel("Modelo 1", m_paginaInicial);
-    titulo->setStyleSheet("font-size: 24px; font-weight: 600; color: #143a5a;");
+    auto* painelHeroi = new QFrame(m_paginaInicial);
+    painelHeroi->setObjectName("painelHeroiDashboard");
+    painelHeroi->setStyleSheet(
+        "#painelHeroiDashboard {"
+        "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #ffffff, stop:1 #e8f2fb);"
+        "border: 1px solid #d2e0ec;"
+        "border-radius: 24px;"
+        "}");
+    aplicarSombraSuave(painelHeroi);
 
-    auto* descricao = new QLabel(
-        "Use a \u00E1rvore lateral para abrir os grupos Dados e Resultados. "
-        "A edi\u00E7\u00E3o e apresenta\u00E7\u00E3o seguem a arquitetura model/view.",
-        m_paginaInicial);
-    descricao->setWordWrap(true);
-    descricao->setStyleSheet("font-size: 14px; color: #4f6375;");
+    auto* layoutHeroi = new QVBoxLayout(painelHeroi);
+    layoutHeroi->setContentsMargins(28, 28, 28, 28);
+    layoutHeroi->setSpacing(18);
 
-    layoutInicial->addWidget(titulo);
-    layoutInicial->addWidget(descricao);
+    auto* etiquetaTopo = new QLabel("Painel de controle", painelHeroi);
+    etiquetaTopo->setStyleSheet("color: #4d7ea8; font-size: 13px; font-weight: 600; letter-spacing: 0.08em;");
+
+    m_labelTituloDashboard = new QLabel("Projeto hidrol\u00F3gico ativo", painelHeroi);
+    m_labelTituloDashboard->setStyleSheet("color: #163a59; font-size: 30px; font-weight: 700;");
+
+    m_labelDescricaoDashboard = new QLabel(
+        "Organize dados de entrada, confira consist\u00EAncia dos modelos e navegue entre resultados hidr\u00E1ulicos com uma estrutura mais clara e profissional.",
+        painelHeroi);
+    m_labelDescricaoDashboard->setWordWrap(true);
+    m_labelDescricaoDashboard->setStyleSheet("color: #537086; font-size: 14px; line-height: 1.5;");
+
+    auto* layoutAcoes = new QHBoxLayout();
+    layoutAcoes->setSpacing(12);
+    QPushButton* botaoNovo = criarBotaoAcao("Novo projeto", iconePadrao(style(), "novo"), true);
+    QPushButton* botaoAbrir = criarBotaoAcao("Abrir projeto", iconePadrao(style(), "abrir"), false);
+    QPushButton* botaoCalcular = criarBotaoAcao("Calcular resultados", iconePadrao(style(), "calcular"), false);
+    layoutAcoes->addWidget(botaoNovo);
+    layoutAcoes->addWidget(botaoAbrir);
+    layoutAcoes->addWidget(botaoCalcular);
+    layoutAcoes->addStretch();
+
+    connect(botaoNovo, &QPushButton::clicked, this, [this]() {
+        popularArvoreModelo();
+        m_abasCentrais->setCurrentWidget(m_paginaInicial);
+        statusBar()->showMessage("Dashboard reposicionada para um novo fluxo de trabalho.", 2500);
+        atualizarPainelContextual();
+    });
+    connect(botaoAbrir, &QPushButton::clicked, this, [this]() {
+        abrirProjetoDeArquivo();
+    });
+    connect(botaoCalcular, &QPushButton::clicked, this, [this]() {
+        calcularResultadosModelo();
+        atualizarPainelContextual();
+        statusBar()->showMessage("Resultados recalculados com sucesso.", 2500);
+    });
+
+    layoutHeroi->addWidget(etiquetaTopo);
+    layoutHeroi->addWidget(m_labelTituloDashboard);
+    layoutHeroi->addWidget(m_labelDescricaoDashboard);
+    layoutHeroi->addLayout(layoutAcoes);
+
+    auto* layoutCards = new QHBoxLayout();
+    layoutCards->setSpacing(18);
+
+    QWidget* cardCanais = criarCardResumo("Canais modelados", "0", "Trechos cadastrados para dimensionamento.");
+    QWidget* cardBacias = criarCardResumo("Bacias ativas", "0", "Contribui\u00E7\u00F5es consideradas no modelo.");
+    QWidget* cardSecoes = criarCardResumo("Se\u00E7\u00F5es dispon\u00EDveis", "0", "Perfis reutiliz\u00E1veis para os canais.");
+
+    m_labelResumoCanais = cardCanais->findChild<QLabel*>("valorResumo");
+    m_labelResumoBacias = cardBacias->findChild<QLabel*>("valorResumo");
+    m_labelResumoSecoes = cardSecoes->findChild<QLabel*>("valorResumo");
+
+    layoutCards->addWidget(cardCanais);
+    layoutCards->addWidget(cardBacias);
+    layoutCards->addWidget(cardSecoes);
+
+    auto* painelRecentes = new QFrame(m_paginaInicial);
+    painelRecentes->setObjectName("painelRecentesDashboard");
+    painelRecentes->setStyleSheet(
+        "#painelRecentesDashboard { background: white; border: 1px solid #d7e1e8; border-radius: 22px; }"
+        "#painelRecentesDashboard QPushButton { text-align: left; padding: 16px 18px; }");
+    aplicarSombraSuave(painelRecentes);
+
+    auto* layoutRecentes = new QVBoxLayout(painelRecentes);
+    layoutRecentes->setContentsMargins(24, 24, 24, 24);
+    layoutRecentes->setSpacing(12);
+
+    auto* tituloRecentes = new QLabel("Projetos recentes e atalhos", painelRecentes);
+    tituloRecentes->setStyleSheet("color: #173d5d; font-size: 20px; font-weight: 700;");
+
+    auto* subtituloRecentes = new QLabel(
+        "Acesse rapidamente os grupos de dados mais usados para edi\u00E7\u00E3o e confer\u00EAncia.",
+        painelRecentes);
+    subtituloRecentes->setWordWrap(true);
+    subtituloRecentes->setStyleSheet("color: #5f7a8d; font-size: 13px;");
+
+    QPushButton* botaoSecoes = criarBotaoAcao("Abrir se\u00E7\u00F5es transversais", iconePadrao(style(), "secoes"), false);
+    QPushButton* botaoCanais = criarBotaoAcao("Abrir canais", iconePadrao(style(), "canais"), false);
+    QPushButton* botaoBacias = criarBotaoAcao("Abrir bacias", iconePadrao(style(), "bacias"), false);
+    QPushButton* botaoResultados = criarBotaoAcao("Abrir resultados de canais", iconePadrao(style(), "resultados"), false);
+
+    connect(botaoSecoes, &QPushButton::clicked, this, [this]() { garantirAbaSecoesTransversais(); });
+    connect(botaoCanais, &QPushButton::clicked, this, [this]() { garantirAbaCanais(); });
+    connect(botaoBacias, &QPushButton::clicked, this, [this]() { garantirAbaBacias(); });
+    connect(botaoResultados, &QPushButton::clicked, this, [this]() { garantirAbaResultadosCanais(); });
+
+    layoutRecentes->addWidget(tituloRecentes);
+    layoutRecentes->addWidget(subtituloRecentes);
+    layoutRecentes->addWidget(botaoSecoes);
+    layoutRecentes->addWidget(botaoCanais);
+    layoutRecentes->addWidget(botaoBacias);
+    layoutRecentes->addWidget(botaoResultados);
+
+    layoutInicial->addWidget(painelHeroi);
+    layoutInicial->addLayout(layoutCards);
+    layoutInicial->addWidget(painelRecentes);
     layoutInicial->addStretch();
 
-    m_abasCentrais->addTab(m_paginaInicial, "In\u00EDcio");
+    m_abasCentrais->addTab(m_paginaInicial, iconePadrao(style(), "dados"), "In\u00EDcio");
     m_abasCentrais->widget(0)->setProperty("tabKey", kAbaInicial);
 
     connect(m_abasCentrais, &QTabWidget::tabCloseRequested, this, [this](int indice) {
@@ -318,23 +492,81 @@ void MainWindow::configurarAreaCentral()
 
         m_abasCentrais->removeTab(indice);
         pagina->deleteLater();
+        atualizarPainelContextual();
+    });
+
+    connect(m_abasCentrais, &QTabWidget::currentChanged, this, [this](int) {
+        atualizarPainelContextual();
     });
 
     setCentralWidget(m_abasCentrais);
 }
 
+void MainWindow::configurarPainelContextual()
+{
+    m_dockContexto = new QDockWidget("Painel contextual", this);
+    m_dockContexto->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    m_dockContexto->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    m_dockContexto->setMinimumWidth(300);
+
+    auto* conteudo = new QWidget(m_dockContexto);
+    auto* layout = new QVBoxLayout(conteudo);
+    layout->setContentsMargins(18, 18, 18, 18);
+    layout->setSpacing(14);
+
+    auto* cartao = new QFrame(conteudo);
+    cartao->setObjectName("cartaoContexto");
+    cartao->setStyleSheet("#cartaoContexto { background: white; border: 1px solid #d7e1e8; border-radius: 20px; }");
+    aplicarSombraSuave(cartao);
+
+    auto* layoutCartao = new QVBoxLayout(cartao);
+    layoutCartao->setContentsMargins(20, 20, 20, 20);
+    layoutCartao->setSpacing(10);
+
+    auto* etiqueta = new QLabel("Contexto ativo", cartao);
+    etiqueta->setStyleSheet("color: #5d88ad; font-size: 12px; font-weight: 700; letter-spacing: 0.08em;");
+
+    m_labelTituloContexto = new QLabel(cartao);
+    m_labelTituloContexto->setWordWrap(true);
+    m_labelTituloContexto->setStyleSheet("color: #163a59; font-size: 22px; font-weight: 700;");
+
+    m_labelDescricaoContexto = new QLabel(cartao);
+    m_labelDescricaoContexto->setWordWrap(true);
+    m_labelDescricaoContexto->setStyleSheet("color: #597386; font-size: 13px;");
+
+    m_labelDetalhesContexto = new QLabel(cartao);
+    m_labelDetalhesContexto->setWordWrap(true);
+    m_labelDetalhesContexto->setStyleSheet(
+        "background: #f4f8fb; color: #365266; border: 1px solid #dbe7f0; border-radius: 14px; padding: 12px;");
+
+    layoutCartao->addWidget(etiqueta);
+    layoutCartao->addWidget(m_labelTituloContexto);
+    layoutCartao->addWidget(m_labelDescricaoContexto);
+    layoutCartao->addWidget(m_labelDetalhesContexto);
+
+    layout->addWidget(cartao);
+    layout->addStretch();
+
+    m_dockContexto->setWidget(conteudo);
+    addDockWidget(Qt::RightDockWidgetArea, m_dockContexto);
+}
+
 void MainWindow::configurarArvoreModelo()
 {
-    m_dockModelo = new QDockWidget("Modelo", this);
+    m_dockModelo = new QDockWidget("Navega\u00E7\u00E3o do projeto", this);
     m_dockModelo->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     m_dockModelo->setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    m_dockModelo->setMinimumWidth(280);
 
     m_arvoreModelo = new QTreeView(m_dockModelo);
     m_arvoreModelo->setAlternatingRowColors(true);
     m_arvoreModelo->setUniformRowHeights(true);
+    m_arvoreModelo->setAnimated(true);
+    m_arvoreModelo->setHeaderHidden(false);
+    m_arvoreModelo->setIndentation(18);
 
     m_modeloArvore = new QStandardItemModel(this);
-    m_modeloArvore->setHorizontalHeaderLabels({ "Estrutura do modelo" });
+    m_modeloArvore->setHorizontalHeaderLabels({ "Estrutura hidr\u00E1ulica" });
     m_arvoreModelo->setModel(m_modeloArvore);
     m_arvoreModelo->setContextMenuPolicy(Qt::CustomContextMenu);
 
@@ -453,8 +685,14 @@ void MainWindow::garantirAbaSecoesTransversais()
     tabela->setItemDelegateForColumn(ModeloTabelaSecoesTransversais::ColunaGeometria, m_delegadoGeometriaSecoes);
     ajustarLarguraColunasTabela(tabela);
 
-    const int indice = m_abasCentrais->addTab(tabela, "Se\u00E7\u00F5es transversais");
-    tabela->setProperty("tabKey", kAbaSecoes);
+    QWidget* pagina = criarPaginaTabela(
+        kAbaSecoes,
+        "Se\u00E7\u00F5es transversais",
+        "Cadastre geometrias reutiliz\u00E1veis para perfis trapezoidais e semicirculares.",
+        "Se\u00E7\u00F5es",
+        tabela,
+        iconePadrao(style(), "secoes"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "secoes"), "Se\u00E7\u00F5es");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaSecoes, tabela);
 }
@@ -473,8 +711,14 @@ void MainWindow::garantirAbaCanais()
     configurarAcaoAdicionarCanal(tabela);
     ajustarLarguraColunasTabela(tabela);
 
-    const int indice = m_abasCentrais->addTab(tabela, "Canais");
-    tabela->setProperty("tabKey", kAbaCanais);
+    QWidget* pagina = criarPaginaTabela(
+        kAbaCanais,
+        "Canais",
+        "Edite trechos, vincule se\u00E7\u00F5es e mantenha a estrutura jusante organizada.",
+        "Canais",
+        tabela,
+        iconePadrao(style(), "canais"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "canais"), "Canais");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaCanais, tabela);
 }
@@ -493,8 +737,14 @@ void MainWindow::garantirAbaBacias()
     configurarAcaoAdicionarBacia(tabela);
     ajustarLarguraColunasTabela(tabela);
 
-    const int indice = m_abasCentrais->addTab(tabela, "Bacias");
-    tabela->setProperty("tabKey", kAbaBacias);
+    QWidget* pagina = criarPaginaTabela(
+        kAbaBacias,
+        "Bacias contribuintes",
+        "Centralize \u00E1rea, talvegue, declividade e v\u00EDnculo de uso e ocupa\u00E7\u00E3o do solo.",
+        "Bacias",
+        tabela,
+        iconePadrao(style(), "bacias"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "bacias"), "Bacias");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaBacias, tabela);
 }
@@ -511,8 +761,14 @@ void MainWindow::garantirAbaUsoOcupacaoSolo()
     tabela->setModel(m_modeloUsoOcupacaoSolo);
     ajustarLarguraColunasTabela(tabela);
 
-    const int indice = m_abasCentrais->addTab(tabela, "Uso e ocupa\u00E7\u00E3o do solo");
-    tabela->setProperty("tabKey", kAbaUsoOcupacaoSolo);
+    QWidget* pagina = criarPaginaTabela(
+        kAbaUsoOcupacaoSolo,
+        "Uso e ocupa\u00E7\u00E3o do solo",
+        "Padronize coeficientes hidrol\u00F3gicos e par\u00E2metros complementares por tipo de cobertura.",
+        "Uso do solo",
+        tabela,
+        iconePadrao(style(), "solo"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "solo"), "Uso do solo");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaUsoOcupacaoSolo, tabela);
 }
@@ -530,8 +786,14 @@ void MainWindow::garantirAbaResultadosCanais()
     configurarVisibilidadeColunasResultadosCanais(tabela, "geral");
     ajustarLarguraColunasTabela(tabela);
 
-    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Canais");
-    tabela->setProperty("tabKey", kAbaResultadosCanais);
+    QWidget* pagina = criarPaginaTabela(
+        kAbaResultadosCanais,
+        "Resultados hidr\u00E1ulicos dos canais",
+        "Compare indicadores consolidados de dimensionamento, folga, velocidade e crit\u00E9rios de verifica\u00E7\u00E3o.",
+        "Resultados canais",
+        tabela,
+        iconePadrao(style(), "resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Resultados canais");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosCanais, tabela);
 }
@@ -549,8 +811,14 @@ void MainWindow::garantirAbaResultadosCanaisDeclividadeMinima()
     configurarVisibilidadeColunasResultadosCanais(tabela, "min");
     ajustarLarguraColunasTabela(tabela);
 
-    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Canais (Sp min)");
-    tabela->setProperty("tabKey", kAbaResultadosCanaisDeclividadeMinima);
+    QWidget* pagina = criarPaginaTabela(
+        kAbaResultadosCanaisDeclividadeMinima,
+        "Resultados de canais com declividade m\u00EDnima",
+        "Revise a resposta hidr\u00E1ulica considerando o limite inferior de declividade admiss\u00EDvel.",
+        "Sp min",
+        tabela,
+        iconePadrao(style(), "resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Sp min");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosCanaisDeclividadeMinima, tabela);
 }
@@ -568,8 +836,14 @@ void MainWindow::garantirAbaResultadosCanaisDeclividadeMaxima()
     configurarVisibilidadeColunasResultadosCanais(tabela, "max");
     ajustarLarguraColunasTabela(tabela);
 
-    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Canais (Sp max)");
-    tabela->setProperty("tabKey", kAbaResultadosCanaisDeclividadeMaxima);
+    QWidget* pagina = criarPaginaTabela(
+        kAbaResultadosCanaisDeclividadeMaxima,
+        "Resultados de canais com declividade m\u00E1xima",
+        "Avalie a condi\u00E7\u00E3o mais cr\u00EDtica para velocidades e tens\u00E3o cisalhante.",
+        "Sp max",
+        tabela,
+        iconePadrao(style(), "resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Sp max");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosCanaisDeclividadeMaxima, tabela);
 }
@@ -587,8 +861,14 @@ void MainWindow::garantirAbaResultadosCanaisDeclividadeFinal()
     configurarVisibilidadeColunasResultadosCanais(tabela, "final");
     ajustarLarguraColunasTabela(tabela);
 
-    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Canais (Sp final)");
-    tabela->setProperty("tabKey", kAbaResultadosCanaisDeclividadeFinal);
+    QWidget* pagina = criarPaginaTabela(
+        kAbaResultadosCanaisDeclividadeFinal,
+        "Resultados de canais com declividade final",
+        "Confer\u00EAncia da solu\u00E7\u00E3o adotada para execu\u00E7\u00E3o e compatibiliza\u00E7\u00E3o final.",
+        "Sp final",
+        tabela,
+        iconePadrao(style(), "resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Sp final");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosCanaisDeclividadeFinal, tabela);
 }
@@ -605,8 +885,14 @@ void MainWindow::garantirAbaResultadosBacias()
     tabela->setModel(m_modeloResultadosBacias);
     ajustarLarguraColunasTabela(tabela);
 
-    const int indice = m_abasCentrais->addTab(tabela, "Resultados - Bacias");
-    tabela->setProperty("tabKey", kAbaResultadosBacias);
+    QWidget* pagina = criarPaginaTabela(
+        kAbaResultadosBacias,
+        "Resultados hidrol\u00F3gicos das bacias",
+        "Consulte contribui\u00E7\u00F5es racionais e par\u00E2metros sintetizados para confer\u00EAncia do escoamento.",
+        "Resultados bacias",
+        tabela,
+        iconePadrao(style(), "resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Resultados bacias");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosBacias, tabela);
 }
@@ -630,22 +916,31 @@ QTableView* MainWindow::criarTabelaBase()
     tabela->setSelectionMode(QAbstractItemView::ExtendedSelection);
     tabela->setAlternatingRowColors(true);
     tabela->setSortingEnabled(false);
+    tabela->setShowGrid(false);
+    tabela->setWordWrap(false);
+    tabela->setCornerButtonEnabled(false);
     tabela->verticalHeader()->setVisible(true);
     tabela->verticalHeader()->setSectionsClickable(true);
+    tabela->verticalHeader()->setDefaultSectionSize(34);
     tabela->horizontalHeader()->setSectionsClickable(true);
     tabela->horizontalHeader()->setHighlightSections(true);
     tabela->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     tabela->horizontalHeader()->setStretchLastSection(false);
+    tabela->horizontalHeader()->setMinimumSectionSize(90);
+    tabela->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    tabela->setStyleSheet(
+        "QTableView { alternate-background-color: #f7fbfe; selection-background-color: #d8eafb; selection-color: #123b5c; }"
+        "QTableView::item { padding: 8px 10px; }");
     tabela->setContextMenuPolicy(Qt::CustomContextMenu);
 
-    // Permite selecionar linha inteira ao clicar no cabeÁalho vertical.
+    // Permite selecionar linha inteira ao clicar no cabe√ßalho vertical.
     connect(tabela->verticalHeader(), &QHeaderView::sectionClicked, tabela, [tabela](int secao) {
         if (!tabela || !tabela->model()) return;
         if (secao < 0 || secao >= tabela->model()->rowCount()) return;
         tabela->selectRow(secao);
     });
 
-    // Permite selecionar coluna inteira ao clicar no cabeÁalho horizontal.
+    // Permite selecionar coluna inteira ao clicar no cabe√ßalho horizontal.
     connect(tabela->horizontalHeader(), &QHeaderView::sectionClicked, tabela, [tabela](int secao) {
         if (!tabela || !tabela->model()) return;
         if (secao < 0 || secao >= tabela->model()->columnCount()) return;
@@ -656,14 +951,245 @@ QTableView* MainWindow::criarTabelaBase()
     return tabela;
 }
 
+QWidget* MainWindow::criarPaginaTabela(const QString& chave,
+                                       const QString& titulo,
+                                       const QString& descricao,
+                                       const QString& tituloAba,
+                                       QTableView* tabela,
+                                       const QIcon& icone)
+{
+    auto* pagina = new QWidget(m_abasCentrais);
+    pagina->setProperty("tabKey", chave);
+
+    auto* layoutPrincipal = new QVBoxLayout(pagina);
+    layoutPrincipal->setContentsMargins(24, 24, 24, 24);
+    layoutPrincipal->setSpacing(18);
+
+    auto* cabecalho = new QFrame(pagina);
+    cabecalho->setStyleSheet("background: white; border: 1px solid #d7e1e8; border-radius: 18px;");
+    aplicarSombraSuave(cabecalho);
+
+    auto* layoutCabecalho = new QHBoxLayout(cabecalho);
+    layoutCabecalho->setContentsMargins(20, 18, 20, 18);
+    layoutCabecalho->setSpacing(16);
+
+    auto* iconeTitulo = new QLabel(cabecalho);
+    iconeTitulo->setPixmap(icone.pixmap(20, 20));
+    iconeTitulo->setFixedSize(28, 28);
+    iconeTitulo->setAlignment(Qt::AlignCenter);
+    iconeTitulo->setStyleSheet("background: #edf5fb; border: 1px solid #d6e5f1; border-radius: 14px;");
+
+    auto* layoutTextos = new QVBoxLayout();
+    layoutTextos->setSpacing(4);
+
+    auto* labelTitulo = new QLabel(titulo, cabecalho);
+    labelTitulo->setStyleSheet("color: #163a59; font-size: 22px; font-weight: 700;");
+
+    auto* labelDescricao = new QLabel(descricao, cabecalho);
+    labelDescricao->setWordWrap(true);
+    labelDescricao->setStyleSheet("color: #60798d; font-size: 13px;");
+
+    auto* etiquetaAba = new QLabel(tituloAba, cabecalho);
+    etiquetaAba->setStyleSheet(
+        "background: #edf5fb; color: #45739d; border: 1px solid #d5e6f4; border-radius: 10px; padding: 6px 10px; font-weight: 600;");
+
+    layoutTextos->addWidget(labelTitulo);
+    layoutTextos->addWidget(labelDescricao);
+
+    layoutCabecalho->addWidget(iconeTitulo, 0, Qt::AlignTop);
+    layoutCabecalho->addLayout(layoutTextos, 1);
+    layoutCabecalho->addWidget(etiquetaAba, 0, Qt::AlignTop);
+
+    layoutPrincipal->addWidget(cabecalho);
+    layoutPrincipal->addWidget(tabela, 1);
+    return pagina;
+}
+
+QPushButton* MainWindow::criarBotaoAcao(const QString& texto,
+                                        const QIcon& icone,
+                                        bool destaque) const
+{
+    auto* botao = new QPushButton(icone, texto);
+    botao->setCursor(Qt::PointingHandCursor);
+    botao->setMinimumHeight(42);
+    if (destaque) {
+        botao->setStyleSheet(
+            "QPushButton { background: #2b6ea6; color: white; border: 1px solid #2b6ea6; font-weight: 600; }"
+            "QPushButton:hover { background: #225d8d; border-color: #225d8d; }"
+            "QPushButton:pressed { background: #1a4d75; }");
+    }
+    return botao;
+}
+
+QWidget* MainWindow::criarCardResumo(const QString& titulo,
+                                     const QString& valor,
+                                     const QString& descricao) const
+{
+    auto* card = new QFrame(m_paginaInicial);
+    card->setStyleSheet("background: white; border: 1px solid #d7e1e8; border-radius: 20px;");
+    aplicarSombraSuave(card);
+
+    auto* layout = new QVBoxLayout(card);
+    layout->setContentsMargins(20, 20, 20, 20);
+    layout->setSpacing(8);
+
+    auto* labelTitulo = new QLabel(titulo, card);
+    labelTitulo->setStyleSheet("color: #5d7890; font-size: 13px; font-weight: 600;");
+
+    auto* labelValor = new QLabel(valor, card);
+    labelValor->setObjectName("valorResumo");
+    labelValor->setStyleSheet("color: #163a59; font-size: 28px; font-weight: 700;");
+
+    auto* labelDescricao = new QLabel(descricao, card);
+    labelDescricao->setWordWrap(true);
+    labelDescricao->setStyleSheet("color: #6c8597; font-size: 12px;");
+
+    layout->addWidget(labelTitulo);
+    layout->addWidget(labelValor);
+    layout->addWidget(labelDescricao);
+    layout->addStretch();
+    return card;
+}
+
+void MainWindow::atualizarDashboard()
+{
+    if (m_labelResumoCanais) {
+        m_labelResumoCanais->setText(QString::number(m_modeloCanais ? m_modeloCanais->rowCount() : 0));
+    }
+    if (m_labelResumoBacias) {
+        m_labelResumoBacias->setText(QString::number(m_modeloBacias ? m_modeloBacias->rowCount() : 0));
+    }
+    if (m_labelResumoSecoes) {
+        m_labelResumoSecoes->setText(QString::number(m_modeloSecoes ? m_modeloSecoes->rowCount() : 0));
+    }
+    if (m_labelTituloDashboard) {
+        m_labelTituloDashboard->setText("Projeto hidrol\u00F3gico ativo");
+    }
+    if (m_labelDescricaoDashboard) {
+        const int canais = m_modeloCanais ? m_modeloCanais->rowCount() : 0;
+        const int bacias = m_modeloBacias ? m_modeloBacias->rowCount() : 0;
+        const int secoes = m_modeloSecoes ? m_modeloSecoes->rowCount() : 0;
+        m_labelDescricaoDashboard->setText(
+            QString("O ambiente est\u00E1 preparado para an\u00E1lise com %1 canal(is), %2 bacia(s) e %3 se\u00E7\u00E3o(\u00F5es) cadastrada(s).")
+                .arg(canais)
+                .arg(bacias)
+                .arg(secoes));
+    }
+}
+
+void MainWindow::definirResumoContextual(const QString& titulo,
+                                         const QString& descricao,
+                                         const QStringList& detalhes)
+{
+    if (m_labelTituloContexto) {
+        m_labelTituloContexto->setText(titulo);
+    }
+    if (m_labelDescricaoContexto) {
+        m_labelDescricaoContexto->setText(descricao);
+    }
+    if (m_labelDetalhesContexto) {
+        m_labelDetalhesContexto->setText(detalhes.join("\n"));
+    }
+}
+
+void MainWindow::atualizarPainelContextual()
+{
+    QWidget* paginaAtual = m_abasCentrais ? m_abasCentrais->currentWidget() : nullptr;
+    const QString chave = paginaAtual ? paginaAtual->property("tabKey").toString() : QString();
+
+    if (chave == kAbaSecoes) {
+        definirResumoContextual(
+            "Se\u00E7\u00F5es transversais",
+            "Biblioteca geom\u00E9trica para o dimensionamento dos canais.",
+            {
+                QString("Registros: %1").arg(m_modeloSecoes ? m_modeloSecoes->rowCount() : 0),
+                "Use perfis consistentes para reduzir retrabalho de edi\u00E7\u00E3o.",
+                "Clique nos cabe\u00E7alhos para selecionar linhas ou colunas inteiras."
+            });
+        return;
+    }
+
+    if (chave == kAbaCanais) {
+        definirResumoContextual(
+            "Canais",
+            "Painel principal para edi\u00E7\u00E3o dos trechos e par\u00E2metros hidr\u00E1ulicos.",
+            {
+                QString("Trechos cadastrados: %1").arg(m_modeloCanais ? m_modeloCanais->rowCount() : 0),
+                "O menu de contexto permite adicionar ou remover linhas com seguran\u00E7a.",
+                "Atribua uma se\u00E7\u00E3o transversal para manter os resultados coerentes."
+            });
+        return;
+    }
+
+    if (chave == kAbaBacias) {
+        definirResumoContextual(
+            "Bacias contribuintes",
+            "Organiza \u00E1reas, talvegues e conex\u00F5es hidrol\u00F3gicas para propaga\u00E7\u00E3o de vaz\u00F5es.",
+            {
+                QString("Bacias cadastradas: %1").arg(m_modeloBacias ? m_modeloBacias->rowCount() : 0),
+                "Mantenha o campo jusante preenchido para garantir o encadeamento do modelo.",
+                "Os coeficientes podem ser sincronizados pelo uso e ocupa\u00E7\u00E3o do solo."
+            });
+        return;
+    }
+
+    if (chave == kAbaUsoOcupacaoSolo) {
+        definirResumoContextual(
+            "Uso e ocupa\u00E7\u00E3o do solo",
+            "Tabela de suporte para os par\u00E2metros de escoamento e eros\u00E3o.",
+            {
+                QString("Tipos cadastrados: %1").arg(m_modeloUsoOcupacaoSolo ? m_modeloUsoOcupacaoSolo->rowCount() : 0),
+                "Importe planilhas CSV para acelerar a padroniza\u00E7\u00E3o dos coeficientes.",
+                "As altera\u00E7\u00F5es repercutem nas bacias vinculadas."
+            });
+        return;
+    }
+
+    if (chave == kAbaResultadosCanais
+        || chave == kAbaResultadosCanaisDeclividadeMinima
+        || chave == kAbaResultadosCanaisDeclividadeMaxima
+        || chave == kAbaResultadosCanaisDeclividadeFinal) {
+        definirResumoContextual(
+            "Resultados de canais",
+            "Consolida indicadores de desempenho hidr\u00E1ulico, folga e verifica\u00E7\u00E3o normativa.",
+            {
+                QString("Linhas calculadas: %1").arg(m_modeloResultadosCanais ? m_modeloResultadosCanais->rowCount() : 0),
+                "Abra as variantes Sp min, Sp max e Sp final para leitura focalizada.",
+                "Recalcule os resultados sempre que dados de entrada forem alterados."
+            });
+        return;
+    }
+
+    if (chave == kAbaResultadosBacias) {
+        definirResumoContextual(
+            "Resultados de bacias",
+            "Resumo hidrol\u00F3gico para confer\u00EAncia r\u00E1pida de contribui\u00E7\u00F5es.",
+            {
+                QString("Linhas calculadas: %1").arg(m_modeloResultadosBacias ? m_modeloResultadosBacias->rowCount() : 0),
+                "Use esta vis\u00E3o para auditoria de \u00E1rea, declividade e Q racional.",
+                "Os resultados refletem imediatamente as edi\u00E7\u00F5es dos dados de entrada."
+            });
+        return;
+    }
+
+    definirResumoContextual(
+        "Dashboard do projeto",
+        "Vis\u00E3o inicial do ambiente de trabalho com atalhos e indicadores do modelo.",
+        {
+            QString("Canais: %1").arg(m_modeloCanais ? m_modeloCanais->rowCount() : 0),
+            QString("Bacias: %1").arg(m_modeloBacias ? m_modeloBacias->rowCount() : 0),
+            "Use os cards e a navega\u00E7\u00E3o lateral para iniciar a edi\u00E7\u00E3o."
+        });
+}
+
 void MainWindow::ajustarLarguraColunasTabela(QTableView* tabela) const
 {
     if (!tabela || !tabela->model()) return;
 
-    // Primeiro ajusta com base em header + conte˙do.
+    // Primeiro ajusta com base em header + conte√∫do.
     tabela->resizeColumnsToContents();
 
-    // MantÈm ajuste manual pelo usu·rio apÛs o dimensionamento inicial.
+    // Mant√©m ajuste manual pelo usu√°rio ap√≥s o dimensionamento inicial.
     tabela->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
 }
 
@@ -768,7 +1294,7 @@ void MainWindow::prepararModeloCanais()
 {
     m_modeloCanais->definirCanais(criarCanaisExemplo());
 
-    // Replica as seÁıes do cen·rio manual de referÍncia.
+    // Replica as se√ß√µes do cen√°rio manual de refer√™ncia.
     const QVector<QString> secoes = {
         "CSD-1", "CSD-1", "CSD-3", "CSD-4", "CSD-1",
         "CSD-2", "CSD-4", "CSD-4", "VTD-1", "CSD-3"
@@ -797,19 +1323,19 @@ void MainWindow::calcularResultadosModelo()
 void MainWindow::configurarAcoesProjeto()
 {
     m_acaoSalvarProjeto = new QAction("Salvar projeto", this);
-    m_acaoSalvarProjeto->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+    m_acaoSalvarProjeto->setIcon(iconePadrao(style(), "salvar"));
 
     m_acaoAbrirProjeto = new QAction("Abrir projeto", this);
-    m_acaoAbrirProjeto->setIcon(style()->standardIcon(QStyle::SP_DialogOpenButton));
+    m_acaoAbrirProjeto->setIcon(iconePadrao(style(), "abrir"));
 
     m_acaoImportarBaciasCsv = new QAction("Importar bacias (.csv)", this);
-    m_acaoImportarBaciasCsv->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
+    m_acaoImportarBaciasCsv->setIcon(iconePadrao(style(), "importar"));
 
-    m_acaoImportarUsoOcupacaoCsv = new QAction("Importar uso/ocupaÁ„o (.csv)", this);
-    m_acaoImportarUsoOcupacaoCsv->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
+    m_acaoImportarUsoOcupacaoCsv = new QAction("Importar uso/ocupa√ß√£o (.csv)", this);
+    m_acaoImportarUsoOcupacaoCsv->setIcon(iconePadrao(style(), "importar"));
 
     m_acaoImportarCanaisCsv = new QAction("Importar canais (.csv)", this);
-    m_acaoImportarCanaisCsv->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
+    m_acaoImportarCanaisCsv->setIcon(iconePadrao(style(), "importar"));
 
     connect(m_acaoSalvarProjeto, &QAction::triggered,
             this,
@@ -843,8 +1369,10 @@ void MainWindow::configurarAcoesProjeto()
 
     QToolBar* barraProjeto = addToolBar("Projeto");
     barraProjeto->setMovable(false);
+    barraProjeto->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     barraProjeto->addAction(m_acaoSalvarProjeto);
     barraProjeto->addAction(m_acaoAbrirProjeto);
+    barraProjeto->addSeparator();
     barraProjeto->addAction(m_acaoImportarBaciasCsv);
     barraProjeto->addAction(m_acaoImportarUsoOcupacaoCsv);
     barraProjeto->addAction(m_acaoImportarCanaisCsv);
@@ -1046,6 +1574,8 @@ bool MainWindow::aplicarObjetoJsonProjeto(const QJsonObject& objetoProjeto)
     }
 
     calcularResultadosModelo();
+    atualizarDashboard();
+    atualizarPainelContextual();
     return true;
 }
 
@@ -1060,7 +1590,7 @@ void MainWindow::salvarProjetoEmArquivo()
 
     QFile arquivo(caminhoArquivo);
     if (!arquivo.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        QMessageBox::warning(this, "Salvar projeto", "N„o foi possÌvel salvar o arquivo informado.");
+        QMessageBox::warning(this, "Salvar projeto", "N√£o foi poss√≠vel salvar o arquivo informado.");
         return;
     }
 
@@ -1068,6 +1598,7 @@ void MainWindow::salvarProjetoEmArquivo()
     arquivo.write(documento.toJson(QJsonDocument::Indented));
     arquivo.close();
 
+    atualizarPainelContextual();
     statusBar()->showMessage("Projeto salvo com sucesso.", 2500);
 }
 
@@ -1082,7 +1613,7 @@ void MainWindow::abrirProjetoDeArquivo()
 
     QFile arquivo(caminhoArquivo);
     if (!arquivo.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, "Abrir projeto", "N„o foi possÌvel abrir o arquivo informado.");
+        QMessageBox::warning(this, "Abrir projeto", "N√£o foi poss√≠vel abrir o arquivo informado.");
         return;
     }
 
@@ -1092,15 +1623,17 @@ void MainWindow::abrirProjetoDeArquivo()
     QJsonParseError erroParse;
     const QJsonDocument documento = QJsonDocument::fromJson(conteudo, &erroParse);
     if (erroParse.error != QJsonParseError::NoError || !documento.isObject()) {
-        QMessageBox::warning(this, "Abrir projeto", "Arquivo inv·lido para projeto SISTEMAHDR.");
+        QMessageBox::warning(this, "Abrir projeto", "Arquivo inv√°lido para projeto SISTEMAHDR.");
         return;
     }
 
     if (!aplicarObjetoJsonProjeto(documento.object())) {
-        QMessageBox::warning(this, "Abrir projeto", "Os dados do arquivo est„o incompletos ou inv·lidos.");
+        QMessageBox::warning(this, "Abrir projeto", "Os dados do arquivo est√£o incompletos ou inv√°lidos.");
         return;
     }
 
+    atualizarDashboard();
+    atualizarPainelContextual();
     statusBar()->showMessage("Projeto carregado com sucesso.", 2500);
 }
 
@@ -1115,7 +1648,7 @@ void MainWindow::importarBaciasDeCsv()
 
     QFile arquivo(caminhoArquivo);
     if (!arquivo.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, "Importar CSV", "N„o foi possÌvel abrir o arquivo CSV informado.");
+        QMessageBox::warning(this, "Importar CSV", "N√£o foi poss√≠vel abrir o arquivo CSV informado.");
         return;
     }
 
@@ -1131,7 +1664,7 @@ void MainWindow::importarBaciasDeCsv()
     conteudo.replace('\r', '\n');
     const QStringList linhas = conteudo.split('\n', Qt::SkipEmptyParts);
     if (linhas.size() <= 1) {
-        QMessageBox::warning(this, "Importar CSV", "Arquivo CSV vazio ou sem dados v·lidos.");
+        QMessageBox::warning(this, "Importar CSV", "Arquivo CSV vazio ou sem dados v√°lidos.");
         return;
     }
 
@@ -1148,7 +1681,7 @@ void MainWindow::importarBaciasDeCsv()
 
         const QStringList colunas = linhaTexto.split(',', Qt::KeepEmptyParts);
         if (colunas.size() < 6) {
-            erros << QString("Linha %1 inv·lida: quantidade de colunas insuficiente.").arg(i + 1);
+            erros << QString("Linha %1 inv√°lida: quantidade de colunas insuficiente.").arg(i + 1);
             continue;
         }
 
@@ -1164,14 +1697,14 @@ void MainWindow::importarBaciasDeCsv()
         const double declividadePercentual = declividadeTexto.toDouble();
 
         if (nomeBacia.isEmpty() || nomeSubbacia.isEmpty()) {
-            erros << QString("Linha %1 inv·lida: Bacia/Subbacia vazias.").arg(i + 1);
+            erros << QString("Linha %1 inv√°lida: Bacia/Subbacia vazias.").arg(i + 1);
             continue;
         }
 
         const QString chaveCombinacao = QString("%1%2%3")
             .arg(nomeBacia.toUpper(), separadorCombinacao, nomeSubbacia.toUpper());
         if (combinacoesUnicas.contains(chaveCombinacao)) {
-            erros << QString("Linha %1 inv·lida: combinaÁ„o Bacia-Subbacia duplicada no CSV.").arg(i + 1);
+            erros << QString("Linha %1 inv√°lida: combina√ß√£o Bacia-Subbacia duplicada no CSV.").arg(i + 1);
             continue;
         }
         combinacoesUnicas.insert(chaveCombinacao);
@@ -1190,13 +1723,13 @@ void MainWindow::importarBaciasDeCsv()
     if (!erros.isEmpty()) {
         QMessageBox::warning(this,
                              "Importar CSV",
-                             QString("Foram encontrados erros durante a importaÁ„o:\n- %1")
+                             QString("Foram encontrados erros durante a importa√ß√£o:\n- %1")
                                  .arg(erros.join("\n- ")));
         return;
     }
 
     if (baciasImportadas.isEmpty()) {
-        QMessageBox::warning(this, "Importar CSV", "Nenhuma bacia v·lida encontrada no arquivo CSV.");
+        QMessageBox::warning(this, "Importar CSV", "Nenhuma bacia v√°lida encontrada no arquivo CSV.");
         return;
     }
 
@@ -1207,6 +1740,8 @@ void MainWindow::importarBaciasDeCsv()
     }
 
     calcularResultadosModelo();
+    atualizarDashboard();
+    atualizarPainelContextual();
     statusBar()->showMessage("Bacias importadas com sucesso do CSV.", 3000);
 }
 
@@ -1214,14 +1749,14 @@ void MainWindow::importarUsoOcupacaoSoloDeCsv()
 {
     const QString caminhoArquivo = QFileDialog::getOpenFileName(
         this,
-        "Importar uso e ocupaÁ„o do solo por CSV",
+        "Importar uso e ocupa√ß√£o do solo por CSV",
         QString(),
         "Arquivo CSV (*.csv)");
     if (caminhoArquivo.isEmpty()) return;
 
     QFile arquivo(caminhoArquivo);
     if (!arquivo.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, "Importar CSV", "N„o foi possÌvel abrir o arquivo CSV informado.");
+        QMessageBox::warning(this, "Importar CSV", "N√£o foi poss√≠vel abrir o arquivo CSV informado.");
         return;
     }
 
@@ -1237,7 +1772,7 @@ void MainWindow::importarUsoOcupacaoSoloDeCsv()
     conteudo.replace('\r', '\n');
     const QStringList linhas = conteudo.split('\n', Qt::SkipEmptyParts);
     if (linhas.size() <= 1) {
-        QMessageBox::warning(this, "Importar CSV", "Arquivo CSV vazio ou sem dados v·lidos.");
+        QMessageBox::warning(this, "Importar CSV", "Arquivo CSV vazio ou sem dados v√°lidos.");
         return;
     }
 
@@ -1253,19 +1788,19 @@ void MainWindow::importarUsoOcupacaoSoloDeCsv()
 
         const QStringList colunas = linhaTexto.split(',', Qt::KeepEmptyParts);
         if (colunas.size() < 9) {
-            erros << QString("Linha %1 inv·lida: quantidade de colunas insuficiente.").arg(i + 1);
+            erros << QString("Linha %1 inv√°lida: quantidade de colunas insuficiente.").arg(i + 1);
             continue;
         }
 
         const QString id = colunas.at(0).trimmed();
         if (id.isEmpty()) {
-            erros << QString("Linha %1 inv·lida: ID vazio.").arg(i + 1);
+            erros << QString("Linha %1 inv√°lida: ID vazio.").arg(i + 1);
             continue;
         }
 
         const QString idNormalizado = id.toUpper();
         if (idsUnicos.contains(idNormalizado)) {
-            erros << QString("Linha %1 inv·lida: ID duplicado no CSV.").arg(i + 1);
+            erros << QString("Linha %1 inv√°lida: ID duplicado no CSV.").arg(i + 1);
             continue;
         }
         idsUnicos.insert(idNormalizado);
@@ -1286,13 +1821,13 @@ void MainWindow::importarUsoOcupacaoSoloDeCsv()
     if (!erros.isEmpty()) {
         QMessageBox::warning(this,
                              "Importar CSV",
-                             QString("Foram encontrados erros durante a importaÁ„o:\n- %1")
+                             QString("Foram encontrados erros durante a importa√ß√£o:\n- %1")
                                  .arg(erros.join("\n- ")));
         return;
     }
 
     if (tiposImportados.isEmpty()) {
-        QMessageBox::warning(this, "Importar CSV", "Nenhum tipo de uso/ocupaÁ„o v·lido encontrado no CSV.");
+        QMessageBox::warning(this, "Importar CSV", "Nenhum tipo de uso/ocupa√ß√£o v√°lido encontrado no CSV.");
         return;
     }
 
@@ -1308,7 +1843,8 @@ void MainWindow::importarUsoOcupacaoSoloDeCsv()
     }
 
     calcularResultadosModelo();
-    statusBar()->showMessage("Uso e ocupaÁ„o do solo importados com sucesso do CSV.", 3000);
+    atualizarPainelContextual();
+    statusBar()->showMessage("Uso e ocupa√ß√£o do solo importados com sucesso do CSV.", 3000);
 }
 
 void MainWindow::importarCanaisDeCsv()
@@ -1322,7 +1858,7 @@ void MainWindow::importarCanaisDeCsv()
 
     QFile arquivo(caminhoArquivo);
     if (!arquivo.open(QIODevice::ReadOnly)) {
-        QMessageBox::warning(this, "Importar CSV", "N„o foi possÌvel abrir o arquivo CSV informado.");
+        QMessageBox::warning(this, "Importar CSV", "N√£o foi poss√≠vel abrir o arquivo CSV informado.");
         return;
     }
 
@@ -1338,7 +1874,7 @@ void MainWindow::importarCanaisDeCsv()
     conteudo.replace('\r', '\n');
     const QStringList linhas = conteudo.split('\n', Qt::SkipEmptyParts);
     if (linhas.size() <= 1) {
-        QMessageBox::warning(this, "Importar CSV", "Arquivo CSV vazio ou sem dados v·lidos.");
+        QMessageBox::warning(this, "Importar CSV", "Arquivo CSV vazio ou sem dados v√°lidos.");
         return;
     }
 
@@ -1356,7 +1892,7 @@ void MainWindow::importarCanaisDeCsv()
 
         const QStringList colunas = linhaTexto.split(',', Qt::KeepEmptyParts);
         if (colunas.size() < 6) {
-            erros << QString("Linha %1 inv·lida: quantidade de colunas insuficiente.").arg(i + 1);
+            erros << QString("Linha %1 inv√°lida: quantidade de colunas insuficiente.").arg(i + 1);
             continue;
         }
 
@@ -1367,13 +1903,13 @@ void MainWindow::importarCanaisDeCsv()
                                     : QString("VTD-1");
 
         if (idCanal.isEmpty()) {
-            erros << QString("Linha %1 inv·lida: ID do canal vazio.").arg(i + 1);
+            erros << QString("Linha %1 inv√°lida: ID do canal vazio.").arg(i + 1);
             continue;
         }
 
         const QString idNormalizado = idCanal.toUpper();
         if (idsUnicos.contains(idNormalizado)) {
-            erros << QString("Linha %1 inv·lida: ID de canal duplicado no CSV.").arg(i + 1);
+            erros << QString("Linha %1 inv√°lida: ID de canal duplicado no CSV.").arg(i + 1);
             continue;
         }
         idsUnicos.insert(idNormalizado);
@@ -1397,13 +1933,13 @@ void MainWindow::importarCanaisDeCsv()
     if (!erros.isEmpty()) {
         QMessageBox::warning(this,
                              "Importar CSV",
-                             QString("Foram encontrados erros durante a importaÁ„o:\n- %1")
+                             QString("Foram encontrados erros durante a importa√ß√£o:\n- %1")
                                  .arg(erros.join("\n- ")));
         return;
     }
 
     if (canaisImportados.isEmpty()) {
-        QMessageBox::warning(this, "Importar CSV", "Nenhum canal v·lido encontrado no CSV.");
+        QMessageBox::warning(this, "Importar CSV", "Nenhum canal v√°lido encontrado no CSV.");
         return;
     }
 
@@ -1422,13 +1958,15 @@ void MainWindow::importarCanaisDeCsv()
     }
 
     calcularResultadosModelo();
+    atualizarDashboard();
+    atualizarPainelContextual();
     statusBar()->showMessage("Canais importados com sucesso do CSV.", 3000);
 }
 
 void MainWindow::configurarAcoesCalculo()
 {
     m_acaoCalcularResultados = new QAction("Calcular resultados", this);
-    m_acaoCalcularResultados->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+    m_acaoCalcularResultados->setIcon(iconePadrao(style(), "calcular"));
 
     connect(m_acaoCalcularResultados, &QAction::triggered,
             this,
@@ -1439,6 +1977,7 @@ void MainWindow::configurarAcoesCalculo()
 
     QToolBar* barraCalculo = addToolBar("Resultados");
     barraCalculo->setMovable(false);
+    barraCalculo->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     barraCalculo->addAction(m_acaoCalcularResultados);
 }
 
@@ -1472,7 +2011,7 @@ void MainWindow::atualizarModeloResultadosCanais()
     if (!m_modeloResultadosCanais || !m_modeloCanais) return;
 
     RedeHidrologica rede;
-    // Registra elementos primeiro sem conex„o jusante e conecta em seguida.
+    // Registra elementos primeiro sem conex√£o jusante e conecta em seguida.
     QMap<QString, QString> jusantePorElemento;
 
     for (const Canal& canal : m_modeloCanais->canais()) {
@@ -1564,7 +2103,7 @@ void MainWindow::atualizarModeloResultadosCanais()
         const double rhFinal = canalFinal.raioHidraulico(hFinal);
         const double tauFinal = calcularTensaoCisalhantePa(rhFinal, std::max(0.0, canal.declividadeFinal()));
 
-        // CritÈrios de verificaÁ„o hidr·ulica do canal.
+        // Crit√©rios de verifica√ß√£o hidr√°ulica do canal.
         constexpr double kVelocidadeMaximaAdmissivelMps = 5.0;
         EntradaVerificacaoCanal entradaVerificacao;
         entradaVerificacao.qpHidrologiaM3s = qDimensionamento;
@@ -1830,7 +2369,7 @@ QStandardItem* MainWindow::criarItemArvore(QStandardItem* pai,
 
 QVector<Canal> MainWindow::criarCanaisExemplo() const
 {
-    // Baseado no cen·rio manual de `RedeHidrologicaTesteManual`.
+    // Baseado no cen√°rio manual de `RedeHidrologicaTesteManual`.
     Canal d041("D04.1-ACO");
     d041.setIdJusante("D04.2-ACO");
     d041.setComprimento(110.00);
@@ -1916,7 +2455,7 @@ QVector<Canal> MainWindow::criarCanaisExemplo() const
 
 QVector<BaciaContribuicao> MainWindow::criarBaciasExemplo() const
 {
-    // Baseado no cen·rio manual de `RedeHidrologicaTesteManual`.
+    // Baseado no cen√°rio manual de `RedeHidrologicaTesteManual`.
     BaciaContribuicao sb01("BACIA01-SB01");
     sb01.setIdJusante("D04.1-ACO");
     sb01.setAreaKm2(5445.88 / 1e6);

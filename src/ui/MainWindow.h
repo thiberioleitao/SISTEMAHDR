@@ -5,6 +5,7 @@
 
 #include <QMainWindow>
 #include <QMap>
+#include <QStringList>
 #include <QVector>
 
 class QDockWidget;
@@ -16,6 +17,8 @@ class QTableView;
 class QTreeView;
 class QModelIndex;
 class QPoint;
+class QPushButton;
+class QLabel;
 class QWidget;
 class QAction;
 
@@ -57,6 +60,11 @@ private:
     void configurarAreaCentral();
 
     /**
+     * @brief Cria o painel lateral direito com resumo contextual da aba ativa.
+     */
+    void configurarPainelContextual();
+
+    /**
      * @brief Cria o painel lateral com a arvore de navegacao do modelo.
      */
     void configurarArvoreModelo();
@@ -73,7 +81,7 @@ private:
     void abrirAbaParaIndice(const QModelIndex& indice);
 
     /**
-     * @brief Garante que a aba de seções transversais exista e a torna ativa.
+     * @brief Garante que a aba de seÃ§Ãµes transversais exista e a torna ativa.
      */
     void garantirAbaSecoesTransversais();
 
@@ -88,7 +96,7 @@ private:
     void garantirAbaBacias();
 
     /**
-     * @brief Garante que a aba de uso e ocupação do solo exista e a torna ativa.
+     * @brief Garante que a aba de uso e ocupaÃ§Ã£o do solo exista e a torna ativa.
      */
     void garantirAbaUsoOcupacaoSolo();
 
@@ -98,12 +106,12 @@ private:
     void garantirAbaResultadosCanais();
 
     /**
-     * @brief Garante que a aba de resultados de canais (declividade mínima) exista e a torna ativa.
+     * @brief Garante que a aba de resultados de canais (declividade mÃ­nima) exista e a torna ativa.
      */
     void garantirAbaResultadosCanaisDeclividadeMinima();
 
     /**
-     * @brief Garante que a aba de resultados de canais (declividade máxima) exista e a torna ativa.
+     * @brief Garante que a aba de resultados de canais (declividade mÃ¡xima) exista e a torna ativa.
      */
     void garantirAbaResultadosCanaisDeclividadeMaxima();
 
@@ -131,6 +139,65 @@ private:
     QTableView* criarTabelaBase();
 
     /**
+     * @brief Encapsula uma tabela em uma pagina com cabecalho e a registra nas abas centrais.
+     * @param chave Identificador logico da aba.
+     * @param titulo Titulo principal exibido na pagina.
+     * @param descricao Texto auxiliar exibido acima da tabela.
+     * @param tituloAba Texto exibido na guia.
+     * @param tabela Tabela principal da pagina.
+     * @param icone Icone utilizado na aba.
+     * @return Ponteiro para a pagina criada.
+     */
+    QWidget* criarPaginaTabela(const QString& chave,
+                               const QString& titulo,
+                               const QString& descricao,
+                               const QString& tituloAba,
+                               QTableView* tabela,
+                               const QIcon& icone);
+
+    /**
+     * @brief Cria um botao padronizado para acoes principais e secundarias da interface.
+     * @param texto Texto apresentado no botao.
+     * @param icone Icone do botao.
+     * @param destaque Indica se o botao deve usar o estilo de acao primaria.
+     * @return Ponteiro para o botao configurado.
+     */
+    QPushButton* criarBotaoAcao(const QString& texto,
+                                const QIcon& icone,
+                                bool destaque) const;
+
+    /**
+     * @brief Cria um card com indicador numerico para a dashboard inicial.
+     * @param titulo Nome resumido do indicador.
+     * @param valor Valor principal exibido em destaque.
+     * @param descricao Texto complementar que explica o indicador.
+     * @return Ponteiro para o card criado.
+     */
+    QWidget* criarCardResumo(const QString& titulo,
+                             const QString& valor,
+                             const QString& descricao) const;
+
+    /**
+     * @brief Atualiza os textos da dashboard com a situacao atual dos modelos de dados.
+     */
+    void atualizarDashboard();
+
+    /**
+     * @brief Atualiza o painel contextual conforme a aba ativa ou selecao atual.
+     */
+    void atualizarPainelContextual();
+
+    /**
+     * @brief Define a descricao padrao exibida no painel contextual.
+     * @param titulo Titulo resumido do contexto atual.
+     * @param descricao Explicacao principal para orientar o usuario.
+     * @param detalhes Lista compacta de informacoes complementares.
+     */
+    void definirResumoContextual(const QString& titulo,
+                                 const QString& descricao,
+                                 const QStringList& detalhes);
+
+    /**
      * @brief Preenche a tabela de canais usando os principais parametros do objeto Canal.
      * @param tabela Tabela onde os canais serao exibidos.
      */
@@ -143,12 +210,12 @@ private:
     void prepararModeloBacias();
 
     /**
-     * @brief Atualiza o modelo de apresentação dos resultados hidráulicos dos canais.
+     * @brief Atualiza o modelo de apresentaÃ§Ã£o dos resultados hidrÃ¡ulicos dos canais.
      */
     void atualizarModeloResultadosCanais();
 
     /**
-     * @brief Atualiza o modelo de apresentação dos resultados das bacias.
+     * @brief Atualiza o modelo de apresentaÃ§Ã£o dos resultados das bacias.
      */
     void atualizarModeloResultadosBacias();
 
@@ -158,12 +225,12 @@ private:
     void calcularResultadosModelo();
 
     /**
-     * @brief Configura ações da interface para cálculo manual de resultados.
+     * @brief Configura aÃ§Ãµes da interface para cÃ¡lculo manual de resultados.
      */
     void configurarAcoesCalculo();
 
     /**
-     * @brief Configura ações para persistência do projeto (salvar/abrir).
+     * @brief Configura aÃ§Ãµes para persistÃªncia do projeto (salvar/abrir).
      */
     void configurarAcoesProjeto();
 
@@ -178,17 +245,17 @@ private:
     void abrirProjetoDeArquivo();
 
     /**
-     * @brief Importa bacias/subbacias e parâmetros a partir de arquivo CSV.
+     * @brief Importa bacias/subbacias e parÃ¢metros a partir de arquivo CSV.
      */
     void importarBaciasDeCsv();
 
     /**
-     * @brief Importa tipos de uso e ocupação do solo e parâmetros a partir de arquivo CSV.
+     * @brief Importa tipos de uso e ocupaÃ§Ã£o do solo e parÃ¢metros a partir de arquivo CSV.
      */
     void importarUsoOcupacaoSoloDeCsv();
 
     /**
-     * @brief Importa canais e parâmetros hidráulicos básicos a partir de arquivo CSV.
+     * @brief Importa canais e parÃ¢metros hidrÃ¡ulicos bÃ¡sicos a partir de arquivo CSV.
      */
     void importarCanaisDeCsv();
 
@@ -199,14 +266,14 @@ private:
 
     /**
      * @brief Aplica objeto JSON de projeto nos modelos de dados.
-     * @param objetoProjeto Conteúdo do projeto carregado.
-     * @return true quando o conteúdo for válido e aplicado.
+     * @param objetoProjeto ConteÃºdo do projeto carregado.
+     * @return true quando o conteÃºdo for vÃ¡lido e aplicado.
      */
     bool aplicarObjetoJsonProjeto(const QJsonObject& objetoProjeto);
 
     /**
-     * @brief Exibe menu de contexto da árvore com ação de cálculo.
-     * @param posicao Posição local do clique.
+     * @brief Exibe menu de contexto da Ã¡rvore com aÃ§Ã£o de cÃ¡lculo.
+     * @param posicao PosiÃ§Ã£o local do clique.
      */
     void mostrarMenuContextoArvore(const QPoint& posicao);
 
@@ -224,24 +291,24 @@ private:
 
     /**
      * @brief Configura atalhos de copiar/colar para uma tabela.
-     * @param tabela Tabela alvo para integração com dados tabulados (Excel).
+     * @param tabela Tabela alvo para integraÃ§Ã£o com dados tabulados (Excel).
      */
     void configurarAcoesCopiarColarTabela(QTableView* tabela);
 
     /**
-     * @brief Copia o bloco selecionado da tabela para a área de transferência.
+     * @brief Copia o bloco selecionado da tabela para a Ã¡rea de transferÃªncia.
      * @param tabela Tabela origem.
      */
     void copiarSelecaoTabela(QTableView* tabela) const;
 
     /**
-     * @brief Cola dados tabulados (Excel) a partir da célula atual da tabela.
+     * @brief Cola dados tabulados (Excel) a partir da cÃ©lula atual da tabela.
      * @param tabela Tabela destino.
      */
     void colarDadosTabela(QTableView* tabela);
 
     /**
-     * @brief Ajusta as larguras de coluna conforme conteúdo/header e mantém redimensionamento manual.
+     * @brief Ajusta as larguras de coluna conforme conteÃºdo/header e mantÃ©m redimensionamento manual.
      * @param tabela Tabela alvo.
      */
     void ajustarLarguraColunasTabela(QTableView* tabela) const;
@@ -284,6 +351,33 @@ private:
 
     /** @brief Pagina inicial exibida antes da abertura de qualquer aba de dados. */
     QWidget* m_paginaInicial = nullptr;
+
+    /** @brief Titulo principal da dashboard inicial. */
+    QLabel* m_labelTituloDashboard = nullptr;
+
+    /** @brief Texto auxiliar com o resumo do projeto aberto. */
+    QLabel* m_labelDescricaoDashboard = nullptr;
+
+    /** @brief Indicador da quantidade de canais carregados. */
+    QLabel* m_labelResumoCanais = nullptr;
+
+    /** @brief Indicador da quantidade de bacias carregadas. */
+    QLabel* m_labelResumoBacias = nullptr;
+
+    /** @brief Indicador da quantidade de secoes transversais carregadas. */
+    QLabel* m_labelResumoSecoes = nullptr;
+
+    /** @brief Painel acoplavel com informacoes contextuais da area central. */
+    QDockWidget* m_dockContexto = nullptr;
+
+    /** @brief Titulo apresentado no painel contextual. */
+    QLabel* m_labelTituloContexto = nullptr;
+
+    /** @brief Descricao principal apresentada no painel contextual. */
+    QLabel* m_labelDescricaoContexto = nullptr;
+
+    /** @brief Lista compacta de observacoes e orientacoes do contexto atual. */
+    QLabel* m_labelDetalhesContexto = nullptr;
 
     /** @brief Modelos de tabela para exibir canais e bacias. */
     ModeloTabelaSecoesTransversais* m_modeloSecoes = nullptr;

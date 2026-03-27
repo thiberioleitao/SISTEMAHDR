@@ -5,7 +5,9 @@
 
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QFrame>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QPainter>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -14,15 +16,31 @@
 
 #include <algorithm>
 
+/**
+ * @brief Área de desenho que representa geometricamente um canal trapezoidal.
+ *
+ * O widget posiciona campos editáveis sobre as cotas desenhadas para manter a
+ * edição visual alinhada com os parâmetros numéricos do painel lateral.
+ */
 class CanalTrapezoidalDesenhoWidget : public QWidget
 {
 public:
+    /**
+     * @brief Cria a área de desenho do perfil trapezoidal.
+     * @param parent Widget pai opcional na hierarquia Qt.
+     */
     explicit CanalTrapezoidalDesenhoWidget(QWidget* parent = nullptr)
         : QWidget(parent)
     {
         setMinimumSize(520, 320);
     }
 
+    /**
+     * @brief Recebe os campos que serão posicionados sobre o desenho.
+     * @param inputB Campo associado à largura de fundo.
+     * @param inputH Campo associado à altura máxima.
+     * @param inputZ Campo associado ao talude lateral.
+     */
     void setInputs(QDoubleSpinBox* inputB, QDoubleSpinBox* inputH, QDoubleSpinBox* inputZ)
     {
         m_inputB = inputB;
@@ -31,6 +49,12 @@ public:
         posicionarInputs();
     }
 
+    /**
+     * @brief Atualiza os parâmetros geométricos usados na renderização.
+     * @param larguraInferior Largura de fundo do canal em metros.
+     * @param alturaMaxima Altura total considerada para o perfil em metros.
+     * @param taludeLateral Inclinação lateral do talude na relação H:V.
+     */
     void setGeometria(double larguraInferior, double alturaMaxima, double taludeLateral)
     {
         m_larguraInferior = std::max(0.1, larguraInferior);
@@ -41,19 +65,27 @@ public:
     }
 
 protected:
+    /**
+     * @brief Reposiciona os campos quando a área de desenho é redimensionada.
+     * @param event Evento padrão de resize do Qt.
+     */
     void resizeEvent(QResizeEvent* event) override
     {
         QWidget::resizeEvent(event);
         posicionarInputs();
     }
 
+    /**
+     * @brief Desenha o perfil trapezoidal e uma lâmina d'água ilustrativa.
+     * @param event Evento padrão de pintura do Qt.
+     */
     void paintEvent(QPaintEvent* event) override
     {
         QWidget::paintEvent(event);
 
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
-        p.fillRect(rect(), QColor(245, 245, 245));
+        p.fillRect(rect(), QColor(245, 248, 251));
 
         const double b = m_larguraInferior;
         const double h = m_alturaMaxima;
@@ -75,12 +107,12 @@ protected:
         const QPointF pFundoDir(centro.x() + (b * escala * 0.5), yFundo);
         const QPointF pTopoDir(centro.x() + (t * escala * 0.5), yTopo);
 
-        p.setPen(QPen(Qt::black, 3));
+        p.setPen(QPen(QColor(42, 60, 78), 3));
         p.drawLine(pTopoEsq, pFundoEsq);
         p.drawLine(pFundoEsq, pFundoDir);
         p.drawLine(pFundoDir, pTopoDir);
 
-        p.setPen(QPen(QColor(180, 0, 0), 2));
+        p.setPen(QPen(QColor(171, 74, 32), 2));
 
         const double yDimB = yFundo + 30.0;
         p.drawLine(QPointF(pFundoEsq.x(), yDimB), QPointF(pFundoDir.x(), yDimB));
@@ -101,12 +133,15 @@ protected:
         const double frac = (yFundo - yAgua) / (yFundo - yTopo);
         const double larguraNaLamina = b + (2.0 * z * h * frac);
 
-        p.setPen(QPen(QColor(30, 80, 255), 2));
+        p.setPen(QPen(QColor(47, 123, 194), 2));
         p.drawLine(QPointF(centro.x() - (larguraNaLamina * escala * 0.5), yAgua),
                    QPointF(centro.x() + (larguraNaLamina * escala * 0.5), yAgua));
     }
 
 private:
+    /**
+     * @brief Reposiciona os campos flutuantes sobre as cotas desenhadas.
+     */
     void posicionarInputs()
     {
         if (!m_inputB || !m_inputH || !m_inputZ) return;
@@ -155,28 +190,50 @@ private:
     }
 
 private:
+    /** @brief Largura de fundo usada na renderização do perfil. */
     double m_larguraInferior = 3.0;
+
+    /** @brief Altura máxima usada na renderização do perfil. */
     double m_alturaMaxima = 2.0;
+
+    /** @brief Talude lateral usado na renderização do perfil. */
     double m_taludeLateral = 1.0;
 
+    /** @brief Campo de edição visual da largura de fundo. */
     QDoubleSpinBox* m_inputB = nullptr;
+
+    /** @brief Campo de edição visual da altura máxima. */
     QDoubleSpinBox* m_inputH = nullptr;
+
+    /** @brief Campo de edição visual do talude lateral. */
     QDoubleSpinBox* m_inputZ = nullptr;
 };
 
+/**
+ * @brief Cria o widget auxiliar de geometria e cálculo simplificado do canal.
+ * @param parent Widget pai opcional na hierarquia Qt.
+ */
 CanalTrapezoidalWidget::CanalTrapezoidalWidget(QWidget* parent)
     : QWidget(parent)
 {
     auto* layoutPrincipal = new QHBoxLayout(this);
-    layoutPrincipal->setContentsMargins(8, 8, 8, 8);
-    layoutPrincipal->setSpacing(12);
+    layoutPrincipal->setContentsMargins(18, 18, 18, 18);
+    layoutPrincipal->setSpacing(18);
 
     m_desenho = new CanalTrapezoidalDesenhoWidget(this);
+    m_desenho->setStyleSheet("background: white; border: 1px solid #d8e3ea; border-radius: 18px;");
 
-    auto* painelDireito = new QWidget(this);
-    painelDireito->setMinimumWidth(240);
+    auto* painelDireito = new QFrame(this);
+    painelDireito->setMinimumWidth(260);
+    painelDireito->setStyleSheet("background: white; border: 1px solid #d8e3ea; border-radius: 18px;");
+
     auto* form = new QFormLayout(painelDireito);
+    form->setContentsMargins(18, 18, 18, 18);
+    form->setSpacing(12);
     form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+
+    auto* tituloPainel = new QLabel("Parâmetros do canal", painelDireito);
+    tituloPainel->setStyleSheet("color: #173d5d; font-size: 18px; font-weight: 700; border: none;");
 
     m_inputLarguraInferiorPainel = new QDoubleSpinBox(painelDireito);
     m_inputLarguraInferiorPainel->setRange(0.1, 10000.0);
@@ -211,7 +268,13 @@ CanalTrapezoidalWidget::CanalTrapezoidalWidget(QWidget* parent)
     m_inputVazaoCalculoPainel->setSuffix(" m³/s");
 
     m_botaoCalcularVazao = new QPushButton("Calcular vazão", painelDireito);
+    m_botaoCalcularVazao->setCursor(Qt::PointingHandCursor);
+    m_botaoCalcularVazao->setStyleSheet(
+        "QPushButton { background: #2b6ea6; color: white; border: 1px solid #2b6ea6; font-weight: 600; padding: 10px 16px; }"
+        "QPushButton:hover { background: #225d8d; border-color: #225d8d; }"
+        "QPushButton:pressed { background: #1a4d75; }");
 
+    form->addRow(tituloPainel);
     form->addRow("Largura inferior (b)", m_inputLarguraInferiorPainel);
     form->addRow("Altura máxima (h)", m_inputAlturaMaximaPainel);
     form->addRow("Talude (z)", m_inputTaludePainel);
@@ -243,11 +306,23 @@ CanalTrapezoidalWidget::CanalTrapezoidalWidget(QWidget* parent)
     aplicarGeometria(4.0, 2.0, 1.0);
 }
 
+/**
+ * @brief Define a geometria exibida no widget e atualiza painel e desenho.
+ * @param larguraInferior Largura de fundo do canal em metros.
+ * @param alturaMaxima Altura total considerada para o perfil em metros.
+ * @param taludeLateral Inclinação lateral do talude na relação H:V.
+ */
 void CanalTrapezoidalWidget::setGeometria(double larguraInferior, double alturaMaxima, double taludeLateral)
 {
     aplicarGeometria(larguraInferior, alturaMaxima, taludeLateral);
 }
 
+/**
+ * @brief Sincroniza todos os campos da interface com a geometria fornecida.
+ * @param larguraInferior Largura de fundo do canal em metros.
+ * @param alturaMaxima Altura total considerada para o perfil em metros.
+ * @param taludeLateral Inclinação lateral do talude na relação H:V.
+ */
 void CanalTrapezoidalWidget::aplicarGeometria(double larguraInferior, double alturaMaxima, double taludeLateral)
 {
     const double b = std::max(0.1, larguraInferior);
@@ -274,6 +349,9 @@ void CanalTrapezoidalWidget::aplicarGeometria(double larguraInferior, double alt
     atualizarDesenho();
 }
 
+/**
+ * @brief Repassa os valores correntes para o widget gráfico principal.
+ */
 void CanalTrapezoidalWidget::atualizarDesenho()
 {
     m_desenho->setGeometria(
@@ -282,6 +360,9 @@ void CanalTrapezoidalWidget::atualizarDesenho()
         m_inputTaludeDesenho->value());
 }
 
+/**
+ * @brief Liga os campos do painel e do desenho para manter a geometria coerente.
+ */
 void CanalTrapezoidalWidget::conectarEventosSincronizacao()
 {
     connect(m_inputLarguraInferiorPainel, qOverload<double>(&QDoubleSpinBox::valueChanged), this, [this](double) {
@@ -331,6 +412,9 @@ void CanalTrapezoidalWidget::conectarEventosSincronizacao()
     });
 }
 
+/**
+ * @brief Calcula a vazão pelo método de Manning a partir do painel auxiliar.
+ */
 void CanalTrapezoidalWidget::calcularVazaoPainel()
 {
     const double b = m_inputLarguraInferiorPainel->value();
