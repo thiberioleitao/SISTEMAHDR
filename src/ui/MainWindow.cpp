@@ -36,6 +36,9 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPen>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSet>
@@ -85,26 +88,131 @@ void aplicarSombraSuave(QWidget* widget)
 
 /**
  * @brief Retorna o icone padronizado utilizado nas acoes e cards da interface.
- * @param estilo Estilo ativo da aplicacao.
  * @param tipo Identificador semantico da acao.
  * @return Icone configurado para o tipo solicitado.
  */
-QIcon iconePadrao(QStyle* estilo, const QString& tipo)
+QIcon iconePadrao(const QString& tipo)
 {
-    if (!estilo) return QIcon();
+    const QSize tamanhoIcone(20, 20);
+    QPixmap pixmap(tamanhoIcone);
+    pixmap.fill(Qt::transparent);
 
-    if (tipo == "novo") return estilo->standardIcon(QStyle::SP_FileIcon);
-    if (tipo == "abrir") return estilo->standardIcon(QStyle::SP_DialogOpenButton);
-    if (tipo == "salvar") return estilo->standardIcon(QStyle::SP_DialogSaveButton);
-    if (tipo == "importar") return estilo->standardIcon(QStyle::SP_ArrowDown);
-    if (tipo == "dados") return estilo->standardIcon(QStyle::SP_DirOpenIcon);
-    if (tipo == "resultados") return estilo->standardIcon(QStyle::SP_DialogApplyButton);
-    if (tipo == "canais") return estilo->standardIcon(QStyle::SP_BrowserReload);
-    if (tipo == "bacias") return estilo->standardIcon(QStyle::SP_DriveNetIcon);
-    if (tipo == "secoes") return estilo->standardIcon(QStyle::SP_FileDialogDetailedView);
-    if (tipo == "solo") return estilo->standardIcon(QStyle::SP_FileDialogListView);
-    if (tipo == "calcular") return estilo->standardIcon(QStyle::SP_MediaPlay);
-    return estilo->standardIcon(QStyle::SP_FileDialogInfoView);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    const QColor corPrimaria("#536b7c");
+    const QColor corSecundaria("#8aa7bf");
+    const QPen caneta(corPrimaria, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+    painter.setPen(caneta);
+    painter.setBrush(Qt::NoBrush);
+
+    auto desenharPonto = [&](const QPointF& centro, qreal raio, const QColor& cor) {
+        painter.save();
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(cor);
+        painter.drawEllipse(centro, raio, raio);
+        painter.restore();
+        painter.setPen(caneta);
+    };
+
+    if (tipo == "novo") {
+        painter.drawRoundedRect(QRectF(4.2, 2.8, 10.8, 14.2), 2.0, 2.0);
+        painter.drawLine(QPointF(15.0, 7.0), QPointF(11.8, 3.8));
+        painter.drawLine(QPointF(10.2, 10.0), QPointF(10.2, 15.0));
+        painter.drawLine(QPointF(7.7, 12.5), QPointF(12.7, 12.5));
+    } else if (tipo == "abrir") {
+        QPainterPath pasta;
+        pasta.moveTo(3.0, 7.0);
+        pasta.lineTo(7.4, 7.0);
+        pasta.lineTo(9.2, 5.2);
+        pasta.lineTo(17.0, 5.2);
+        pasta.lineTo(17.0, 15.7);
+        pasta.lineTo(3.0, 15.7);
+        pasta.closeSubpath();
+        painter.drawPath(pasta);
+        painter.drawLine(QPointF(5.0, 9.2), QPointF(15.2, 9.2));
+    } else if (tipo == "salvar") {
+        painter.drawRoundedRect(QRectF(4.0, 3.0, 12.0, 14.0), 2.0, 2.0);
+        painter.drawRect(QRectF(6.5, 4.7, 7.0, 3.4));
+        painter.drawLine(QPointF(7.0, 12.5), QPointF(13.0, 12.5));
+    } else if (tipo == "importar") {
+        painter.drawLine(QPointF(10.0, 3.5), QPointF(10.0, 12.5));
+        painter.drawLine(QPointF(6.8, 9.4), QPointF(10.0, 12.7));
+        painter.drawLine(QPointF(13.2, 9.4), QPointF(10.0, 12.7));
+        painter.drawRoundedRect(QRectF(4.5, 13.4, 11.0, 2.4), 1.1, 1.1);
+    } else if (tipo == "dados") {
+        painter.drawRoundedRect(QRectF(4.0, 4.0, 12.0, 12.0), 3.0, 3.0);
+        painter.drawLine(QPointF(10.0, 5.5), QPointF(10.0, 14.5));
+        painter.drawLine(QPointF(5.5, 10.0), QPointF(14.5, 10.0));
+    } else if (tipo == "modelo") {
+        desenharPonto(QPointF(5.0, 10.0), 1.7, corSecundaria);
+        desenharPonto(QPointF(10.0, 5.0), 1.7, corSecundaria);
+        desenharPonto(QPointF(15.0, 10.0), 1.7, corSecundaria);
+        desenharPonto(QPointF(10.0, 15.0), 1.7, corSecundaria);
+        painter.drawLine(QPointF(6.5, 9.0), QPointF(8.7, 6.5));
+        painter.drawLine(QPointF(11.3, 6.5), QPointF(13.5, 9.0));
+        painter.drawLine(QPointF(13.5, 11.0), QPointF(11.3, 13.5));
+        painter.drawLine(QPointF(8.7, 13.5), QPointF(6.5, 11.0));
+    } else if (tipo == "resultados") {
+        painter.drawLine(QPointF(4.0, 15.5), QPointF(16.0, 15.5));
+        painter.drawRoundedRect(QRectF(5.2, 10.2, 2.2, 5.3), 0.8, 0.8);
+        painter.drawRoundedRect(QRectF(8.8, 7.8, 2.2, 7.7), 0.8, 0.8);
+        painter.drawRoundedRect(QRectF(12.4, 5.2, 2.2, 10.3), 0.8, 0.8);
+    } else if (tipo == "canais") {
+        QPainterPath onda;
+        onda.moveTo(3.0, 12.0);
+        onda.cubicTo(5.0, 7.0, 7.0, 17.0, 9.0, 12.0);
+        onda.cubicTo(11.0, 7.0, 13.0, 17.0, 15.0, 12.0);
+        onda.cubicTo(15.6, 10.8, 16.2, 10.0, 17.0, 9.4);
+        painter.drawPath(onda);
+        painter.drawLine(QPointF(4.0, 6.3), QPointF(16.0, 6.3));
+    } else if (tipo == "bacias") {
+        QPainterPath poligono;
+        poligono.moveTo(5.0, 5.5);
+        poligono.lineTo(12.8, 4.2);
+        poligono.lineTo(15.8, 9.0);
+        poligono.lineTo(13.2, 15.5);
+        poligono.lineTo(6.2, 15.0);
+        poligono.lineTo(3.8, 10.2);
+        poligono.closeSubpath();
+        painter.drawPath(poligono);
+        painter.drawLine(QPointF(7.0, 13.0), QPointF(12.5, 6.5));
+    } else if (tipo == "secoes") {
+        QPainterPath secao;
+        secao.moveTo(4.0, 14.5);
+        secao.lineTo(7.3, 6.0);
+        secao.lineTo(12.7, 6.0);
+        secao.lineTo(16.0, 14.5);
+        painter.drawPath(secao);
+        painter.drawLine(QPointF(6.0, 10.8), QPointF(14.0, 10.8));
+    } else if (tipo == "solo") {
+        painter.drawRoundedRect(QRectF(4.5, 5.0, 11.0, 2.4), 1.0, 1.0);
+        painter.drawRoundedRect(QRectF(4.5, 8.8, 11.0, 2.4), 1.0, 1.0);
+        painter.drawRoundedRect(QRectF(4.5, 12.6, 11.0, 2.4), 1.0, 1.0);
+    } else if (tipo == "calcular") {
+        painter.drawEllipse(QRectF(4.2, 4.2, 11.6, 11.6));
+        painter.drawLine(QPointF(10.0, 6.5), QPointF(10.0, 10.2));
+        painter.drawLine(QPointF(10.0, 10.2), QPointF(12.8, 11.8));
+    } else if (tipo == "min") {
+        painter.drawLine(QPointF(4.0, 15.5), QPointF(16.0, 15.5));
+        painter.drawLine(QPointF(5.0, 7.0), QPointF(15.0, 12.8));
+        painter.drawLine(QPointF(5.0, 12.8), QPointF(8.2, 12.8));
+    } else if (tipo == "max") {
+        painter.drawLine(QPointF(4.0, 15.5), QPointF(16.0, 15.5));
+        painter.drawLine(QPointF(5.0, 12.8), QPointF(15.0, 7.0));
+        painter.drawLine(QPointF(11.8, 7.0), QPointF(15.0, 7.0));
+    } else if (tipo == "final") {
+        painter.drawLine(QPointF(4.5, 15.0), QPointF(8.0, 10.5));
+        painter.drawLine(QPointF(8.0, 10.5), QPointF(11.2, 13.0));
+        painter.drawLine(QPointF(11.2, 13.0), QPointF(15.5, 6.0));
+        desenharPonto(QPointF(15.5, 6.0), 1.5, corSecundaria);
+    } else {
+        painter.drawEllipse(QRectF(5.0, 5.0, 10.0, 10.0));
+        painter.drawLine(QPointF(10.0, 8.0), QPointF(10.0, 10.6));
+        desenharPonto(QPointF(10.0, 13.1), 0.9, corPrimaria);
+    }
+
+    return QIcon(pixmap);
 }
 
 void configurarVisibilidadeColunasResultadosCanais(QTableView* tabela, const QString& modoDeclividade)
@@ -331,28 +439,33 @@ void MainWindow::configurarJanela()
     statusBar()->showMessage("Selecione um m\u00F3dulo na navega\u00E7\u00E3o lateral para editar dados e visualizar resultados.");
 
     setStyleSheet(
-        "QMainWindow { background: #eef3f7; }"
-        "QStatusBar { background: #f7fafc; color: #486174; border-top: 1px solid #d6e0e8; }"
-        "QToolBar { background: #f7fafc; border: none; spacing: 8px; padding: 10px 18px; }"
-        "QToolButton { background: transparent; color: #244257; border: 1px solid transparent; border-radius: 10px; padding: 8px 12px; }"
-        "QToolButton:hover { background: #e3eef8; border-color: #c6d9ea; }"
-        "QToolButton:pressed { background: #d2e4f4; }"
-        "QDockWidget { color: #234258; font-weight: 600; }"
-        "QDockWidget::title { background: #f7fafc; color: #234258; padding: 12px 16px; border-bottom: 1px solid #d6e0e8; }"
-        "QTreeView, QTableView, QScrollArea, QTextEdit { background: white; border: 1px solid #d7e1e8; border-radius: 14px; }"
-        "QTreeView::item { padding: 8px 6px; margin: 2px 6px; border-radius: 8px; }"
-        "QTreeView::item:hover { background: #edf5fb; }"
-        "QTreeView::item:selected { background: #d8eafb; color: #113554; }"
-        "QTabWidget::pane { border: 1px solid #d7e1e8; border-radius: 16px; background: #fdfefe; top: -1px; }"
-        "QTabBar::tab { background: #e7eef4; color: #4c6679; padding: 10px 16px; margin-right: 6px; border-top-left-radius: 12px; border-top-right-radius: 12px; }"
-        "QTabBar::tab:hover { background: #ddeaf5; color: #244257; }"
-        "QTabBar::tab:selected { background: white; color: #143a5a; font-weight: 600; }"
-        "QHeaderView::section { background: #edf3f8; color: #345066; padding: 10px 12px; border: none; border-bottom: 1px solid #d7e1e8; font-weight: 600; }"
-        "QPushButton { border-radius: 12px; padding: 10px 16px; border: 1px solid #c6d7e6; background: white; color: #1f4564; }"
-        "QPushButton:hover { background: #eef5fb; border-color: #a9c5de; }"
-        "QPushButton:pressed { background: #dfeef9; }"
-        "QLineEdit, QDoubleSpinBox, QComboBox { min-height: 34px; border: 1px solid #cfdbe5; border-radius: 10px; padding: 0 10px; background: white; }"
-        "QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color: #4f91c7; }");
+        "QMainWindow { background: #edf2f6; }"
+        "QWidget { color: #213847; font-size: 11px; }"
+        "QStatusBar { background: #f8fafc; color: #5f7483; border-top: 1px solid #d7e0e8; }"
+        "QToolBar { background: #f8fafc; border: none; spacing: 6px; padding: 8px 14px; }"
+        "QToolBar::separator { width: 10px; }"
+        "QToolButton { background: transparent; color: #334c5e; border: 1px solid transparent; border-radius: 10px; padding: 6px 10px; font-size: 11px; }"
+        "QToolButton:hover { background: #e7eff6; border-color: #cedae5; }"
+        "QToolButton:pressed { background: #dbe7f1; }"
+        "QToolButton:focus { border-color: #78a7cf; background: #eef5fb; }"
+        "QDockWidget { color: #274355; font-weight: 600; }"
+        "QDockWidget::title { background: #f8fafc; color: #274355; padding: 11px 14px; border-bottom: 1px solid #d7e0e8; }"
+        "QTreeView, QTableView, QScrollArea, QTextEdit { background: white; border: 1px solid #d8e1e8; border-radius: 14px; outline: none; }"
+        "QTreeView::item { padding: 9px 8px; margin: 3px 8px; border-radius: 10px; }"
+        "QTreeView::item:hover { background: #eef4f9; }"
+        "QTreeView::item:selected { background: #d9e8f5; color: #153a56; }"
+        "QTreeView::branch:selected { background: transparent; }"
+        "QTreeView:focus, QTableView:focus, QLineEdit:focus, QDoubleSpinBox:focus, QComboBox:focus { border: 1px solid #78a7cf; }"
+        "QTabWidget::pane { border: 1px solid #d8e1e8; border-radius: 16px; background: #fcfdfe; top: -1px; }"
+        "QTabBar::tab { background: #e9eff4; color: #5d7382; padding: 9px 14px; margin-right: 4px; border-top-left-radius: 12px; border-top-right-radius: 12px; font-size: 11px; }"
+        "QTabBar::tab:hover { background: #dfe8f1; color: #304a5d; }"
+        "QTabBar::tab:selected { background: white; color: #17394f; font-weight: 600; }"
+        "QHeaderView::section { background: #eef3f7; color: #3e586b; padding: 9px 10px; border: none; border-bottom: 1px solid #d7e0e8; font-size: 11px; font-weight: 600; }"
+        "QPushButton { border-radius: 11px; padding: 8px 14px; border: 1px solid #ccd8e3; background: white; color: #26465a; font-size: 11px; }"
+        "QPushButton:hover { background: #eef4f9; border-color: #b4c9da; }"
+        "QPushButton:pressed { background: #dfeaf3; }"
+        "QPushButton:focus { border-color: #78a7cf; background: #f2f8fd; }"
+        "QLineEdit, QDoubleSpinBox, QComboBox { min-height: 30px; border: 1px solid #d1dbe4; border-radius: 9px; padding: 0 9px; background: white; font-size: 11px; }");
 }
 
 void MainWindow::configurarAreaCentral()
@@ -363,8 +476,8 @@ void MainWindow::configurarAreaCentral()
 
     m_paginaInicial = new QWidget(m_abasCentrais);
     auto* layoutInicial = new QVBoxLayout(m_paginaInicial);
-    layoutInicial->setContentsMargins(36, 36, 36, 36);
-    layoutInicial->setSpacing(24);
+    layoutInicial->setContentsMargins(28, 28, 28, 28);
+    layoutInicial->setSpacing(18);
 
     auto* painelHeroi = new QFrame(m_paginaInicial);
     painelHeroi->setObjectName("painelHeroiDashboard");
@@ -377,26 +490,26 @@ void MainWindow::configurarAreaCentral()
     aplicarSombraSuave(painelHeroi);
 
     auto* layoutHeroi = new QVBoxLayout(painelHeroi);
-    layoutHeroi->setContentsMargins(28, 28, 28, 28);
-    layoutHeroi->setSpacing(18);
+    layoutHeroi->setContentsMargins(24, 24, 24, 24);
+    layoutHeroi->setSpacing(14);
 
     auto* etiquetaTopo = new QLabel("Painel de controle", painelHeroi);
-    etiquetaTopo->setStyleSheet("color: #4d7ea8; font-size: 13px; font-weight: 600; letter-spacing: 0.08em;");
+    etiquetaTopo->setStyleSheet("color: #6289aa; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;");
 
     m_labelTituloDashboard = new QLabel("Projeto hidrol\u00F3gico ativo", painelHeroi);
-    m_labelTituloDashboard->setStyleSheet("color: #163a59; font-size: 30px; font-weight: 700;");
+    m_labelTituloDashboard->setStyleSheet("color: #163a59; font-size: 18px; font-weight: 700;");
 
     m_labelDescricaoDashboard = new QLabel(
         "Organize dados de entrada, confira consist\u00EAncia dos modelos e navegue entre resultados hidr\u00E1ulicos com uma estrutura mais clara e profissional.",
         painelHeroi);
     m_labelDescricaoDashboard->setWordWrap(true);
-    m_labelDescricaoDashboard->setStyleSheet("color: #537086; font-size: 14px; line-height: 1.5;");
+    m_labelDescricaoDashboard->setStyleSheet("color: #5e7787; font-size: 11px;");
 
     auto* layoutAcoes = new QHBoxLayout();
-    layoutAcoes->setSpacing(12);
-    QPushButton* botaoNovo = criarBotaoAcao("Novo projeto", iconePadrao(style(), "novo"), true);
-    QPushButton* botaoAbrir = criarBotaoAcao("Abrir projeto", iconePadrao(style(), "abrir"), false);
-    QPushButton* botaoCalcular = criarBotaoAcao("Calcular resultados", iconePadrao(style(), "calcular"), false);
+    layoutAcoes->setSpacing(10);
+    QPushButton* botaoNovo = criarBotaoAcao("Novo projeto", iconePadrao("novo"), true);
+    QPushButton* botaoAbrir = criarBotaoAcao("Abrir projeto", iconePadrao("abrir"), false);
+    QPushButton* botaoCalcular = criarBotaoAcao("Calcular resultados", iconePadrao("calcular"), false);
     layoutAcoes->addWidget(botaoNovo);
     layoutAcoes->addWidget(botaoAbrir);
     layoutAcoes->addWidget(botaoCalcular);
@@ -423,7 +536,7 @@ void MainWindow::configurarAreaCentral()
     layoutHeroi->addLayout(layoutAcoes);
 
     auto* layoutCards = new QHBoxLayout();
-    layoutCards->setSpacing(18);
+    layoutCards->setSpacing(14);
 
     QWidget* cardCanais = criarCardResumo("Canais modelados", "0", "Trechos cadastrados para dimensionamento.");
     QWidget* cardBacias = criarCardResumo("Bacias ativas", "0", "Contribui\u00E7\u00F5es consideradas no modelo.");
@@ -445,22 +558,22 @@ void MainWindow::configurarAreaCentral()
     aplicarSombraSuave(painelRecentes);
 
     auto* layoutRecentes = new QVBoxLayout(painelRecentes);
-    layoutRecentes->setContentsMargins(24, 24, 24, 24);
-    layoutRecentes->setSpacing(12);
+    layoutRecentes->setContentsMargins(20, 20, 20, 20);
+    layoutRecentes->setSpacing(10);
 
     auto* tituloRecentes = new QLabel("Projetos recentes e atalhos", painelRecentes);
-    tituloRecentes->setStyleSheet("color: #173d5d; font-size: 20px; font-weight: 700;");
+    tituloRecentes->setStyleSheet("color: #173d5d; font-size: 15px; font-weight: 700;");
 
     auto* subtituloRecentes = new QLabel(
         "Acesse rapidamente os grupos de dados mais usados para edi\u00E7\u00E3o e confer\u00EAncia.",
         painelRecentes);
     subtituloRecentes->setWordWrap(true);
-    subtituloRecentes->setStyleSheet("color: #5f7a8d; font-size: 13px;");
+    subtituloRecentes->setStyleSheet("color: #5f7a8d; font-size: 11px;");
 
-    QPushButton* botaoSecoes = criarBotaoAcao("Abrir se\u00E7\u00F5es transversais", iconePadrao(style(), "secoes"), false);
-    QPushButton* botaoCanais = criarBotaoAcao("Abrir canais", iconePadrao(style(), "canais"), false);
-    QPushButton* botaoBacias = criarBotaoAcao("Abrir bacias", iconePadrao(style(), "bacias"), false);
-    QPushButton* botaoResultados = criarBotaoAcao("Abrir resultados de canais", iconePadrao(style(), "resultados"), false);
+    QPushButton* botaoSecoes = criarBotaoAcao("Abrir se\u00E7\u00F5es transversais", iconePadrao("secoes"), false);
+    QPushButton* botaoCanais = criarBotaoAcao("Abrir canais", iconePadrao("canais"), false);
+    QPushButton* botaoBacias = criarBotaoAcao("Abrir bacias", iconePadrao("bacias"), false);
+    QPushButton* botaoResultados = criarBotaoAcao("Abrir resultados de canais", iconePadrao("resultados"), false);
 
     connect(botaoSecoes, &QPushButton::clicked, this, [this]() { garantirAbaSecoesTransversais(); });
     connect(botaoCanais, &QPushButton::clicked, this, [this]() { garantirAbaCanais(); });
@@ -479,7 +592,7 @@ void MainWindow::configurarAreaCentral()
     layoutInicial->addWidget(painelRecentes);
     layoutInicial->addStretch();
 
-    m_abasCentrais->addTab(m_paginaInicial, iconePadrao(style(), "dados"), "In\u00EDcio");
+    m_abasCentrais->addTab(m_paginaInicial, iconePadrao("dados"), "In\u00EDcio");
     m_abasCentrais->widget(0)->setProperty("tabKey", kAbaInicial);
 
     connect(m_abasCentrais, &QTabWidget::tabCloseRequested, this, [this](int indice) {
@@ -511,8 +624,8 @@ void MainWindow::configurarPainelContextual()
 
     auto* conteudo = new QWidget(m_dockContexto);
     auto* layout = new QVBoxLayout(conteudo);
-    layout->setContentsMargins(18, 18, 18, 18);
-    layout->setSpacing(14);
+    layout->setContentsMargins(14, 14, 14, 14);
+    layout->setSpacing(12);
 
     auto* cartao = new QFrame(conteudo);
     cartao->setObjectName("cartaoContexto");
@@ -520,24 +633,24 @@ void MainWindow::configurarPainelContextual()
     aplicarSombraSuave(cartao);
 
     auto* layoutCartao = new QVBoxLayout(cartao);
-    layoutCartao->setContentsMargins(20, 20, 20, 20);
-    layoutCartao->setSpacing(10);
+    layoutCartao->setContentsMargins(18, 18, 18, 18);
+    layoutCartao->setSpacing(8);
 
     auto* etiqueta = new QLabel("Contexto ativo", cartao);
-    etiqueta->setStyleSheet("color: #5d88ad; font-size: 12px; font-weight: 700; letter-spacing: 0.08em;");
+    etiqueta->setStyleSheet("color: #6a8ba8; font-size: 10px; font-weight: 700; letter-spacing: 0.08em;");
 
     m_labelTituloContexto = new QLabel(cartao);
     m_labelTituloContexto->setWordWrap(true);
-    m_labelTituloContexto->setStyleSheet("color: #163a59; font-size: 22px; font-weight: 700;");
+    m_labelTituloContexto->setStyleSheet("color: #163a59; font-size: 15px; font-weight: 700;");
 
     m_labelDescricaoContexto = new QLabel(cartao);
     m_labelDescricaoContexto->setWordWrap(true);
-    m_labelDescricaoContexto->setStyleSheet("color: #597386; font-size: 13px;");
+    m_labelDescricaoContexto->setStyleSheet("color: #597386; font-size: 11px;");
 
     m_labelDetalhesContexto = new QLabel(cartao);
     m_labelDetalhesContexto->setWordWrap(true);
     m_labelDetalhesContexto->setStyleSheet(
-        "background: #f4f8fb; color: #365266; border: 1px solid #dbe7f0; border-radius: 14px; padding: 12px;");
+        "background: #f4f8fb; color: #365266; border: 1px solid #dbe7f0; border-radius: 14px; padding: 10px; font-size: 11px;");
 
     layoutCartao->addWidget(etiqueta);
     layoutCartao->addWidget(m_labelTituloContexto);
@@ -562,8 +675,13 @@ void MainWindow::configurarArvoreModelo()
     m_arvoreModelo->setAlternatingRowColors(true);
     m_arvoreModelo->setUniformRowHeights(true);
     m_arvoreModelo->setAnimated(true);
-    m_arvoreModelo->setHeaderHidden(false);
-    m_arvoreModelo->setIndentation(18);
+    m_arvoreModelo->setHeaderHidden(true);
+    m_arvoreModelo->setIndentation(14);
+    m_arvoreModelo->setExpandsOnDoubleClick(false);
+    m_arvoreModelo->setIconSize(QSize(18, 18));
+    m_arvoreModelo->setStyleSheet(
+        "QTreeView { background: #fbfcfe; padding: 8px 0; }"
+        "QTreeView::item { min-height: 24px; }");
 
     m_modeloArvore = new QStandardItemModel(this);
     m_modeloArvore->setHorizontalHeaderLabels({ "Estrutura hidr\u00E1ulica" });
@@ -594,32 +712,32 @@ void MainWindow::popularArvoreModelo()
         m_modeloArvore->invisibleRootItem(),
         "Modelo 1",
         "modelo",
-        style()->standardIcon(QStyle::SP_DirHomeIcon));
+        iconePadrao("modelo"));
 
     QStandardItem* itemDados = criarItemArvore(
         raiz,
         "Dados",
         "dados",
-        style()->standardIcon(QStyle::SP_DirIcon));
+        iconePadrao("dados"));
 
-    criarItemArvore(itemDados, "Se\u00E7\u00F5es transversais", "secoes", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-    criarItemArvore(itemDados, "Canais", "canais", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-    criarItemArvore(itemDados, "Bacias", "bacias", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-    criarItemArvore(itemDados, "Uso e ocupa\u00E7\u00E3o do solo", "uso_ocupacao_solo", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    criarItemArvore(itemDados, "Se\u00E7\u00F5es transversais", "secoes", iconePadrao("secoes"));
+    criarItemArvore(itemDados, "Canais", "canais", iconePadrao("canais"));
+    criarItemArvore(itemDados, "Bacias", "bacias", iconePadrao("bacias"));
+    criarItemArvore(itemDados, "Uso e ocupa\u00E7\u00E3o do solo", "uso_ocupacao_solo", iconePadrao("solo"));
 
     QStandardItem* itemResultados = criarItemArvore(
         raiz,
         "Resultados",
         "resultados",
-        style()->standardIcon(QStyle::SP_DirIcon));
+        iconePadrao("resultados"));
 
-    QStandardItem* itemResultadosCanais = criarItemArvore(itemResultados, "Canais", "resultados_canais", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-    criarItemArvore(itemResultados, "Bacias", "resultados_bacias", style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    QStandardItem* itemResultadosCanais = criarItemArvore(itemResultados, "Canais", "resultados_canais", iconePadrao("resultados"));
+    criarItemArvore(itemResultados, "Bacias", "resultados_bacias", iconePadrao("resultados"));
 
     if (itemResultadosCanais) {
-        criarItemArvore(itemResultadosCanais, "Declividade m\u00EDnima", "resultados_canais_declividade_minima", style()->standardIcon(QStyle::SP_FileDialogInfoView));
-        criarItemArvore(itemResultadosCanais, "Declividade m\u00E1xima", "resultados_canais_declividade_maxima", style()->standardIcon(QStyle::SP_FileDialogInfoView));
-        criarItemArvore(itemResultadosCanais, "Declividade final", "resultados_canais_declividade_final", style()->standardIcon(QStyle::SP_FileDialogInfoView));
+        criarItemArvore(itemResultadosCanais, "Declividade m\u00EDnima", "resultados_canais_declividade_minima", iconePadrao("min"));
+        criarItemArvore(itemResultadosCanais, "Declividade m\u00E1xima", "resultados_canais_declividade_maxima", iconePadrao("max"));
+        criarItemArvore(itemResultadosCanais, "Declividade final", "resultados_canais_declividade_final", iconePadrao("final"));
         m_arvoreModelo->expand(itemResultadosCanais->index());
     }
 
@@ -691,8 +809,8 @@ void MainWindow::garantirAbaSecoesTransversais()
         "Cadastre geometrias reutiliz\u00E1veis para perfis trapezoidais e semicirculares.",
         "Se\u00E7\u00F5es",
         tabela,
-        iconePadrao(style(), "secoes"));
-    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "secoes"), "Se\u00E7\u00F5es");
+        iconePadrao("secoes"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("secoes"), "Se\u00E7\u00F5es");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaSecoes, tabela);
 }
@@ -717,8 +835,8 @@ void MainWindow::garantirAbaCanais()
         "Edite trechos, vincule se\u00E7\u00F5es e mantenha a estrutura jusante organizada.",
         "Canais",
         tabela,
-        iconePadrao(style(), "canais"));
-    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "canais"), "Canais");
+        iconePadrao("canais"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("canais"), "Canais");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaCanais, tabela);
 }
@@ -743,8 +861,8 @@ void MainWindow::garantirAbaBacias()
         "Centralize \u00E1rea, talvegue, declividade e v\u00EDnculo de uso e ocupa\u00E7\u00E3o do solo.",
         "Bacias",
         tabela,
-        iconePadrao(style(), "bacias"));
-    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "bacias"), "Bacias");
+        iconePadrao("bacias"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("bacias"), "Bacias");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaBacias, tabela);
 }
@@ -767,8 +885,8 @@ void MainWindow::garantirAbaUsoOcupacaoSolo()
         "Padronize coeficientes hidrol\u00F3gicos e par\u00E2metros complementares por tipo de cobertura.",
         "Uso do solo",
         tabela,
-        iconePadrao(style(), "solo"));
-    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "solo"), "Uso do solo");
+        iconePadrao("solo"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("solo"), "Uso do solo");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaUsoOcupacaoSolo, tabela);
 }
@@ -792,8 +910,8 @@ void MainWindow::garantirAbaResultadosCanais()
         "Compare indicadores consolidados de dimensionamento, folga, velocidade e crit\u00E9rios de verifica\u00E7\u00E3o.",
         "Resultados canais",
         tabela,
-        iconePadrao(style(), "resultados"));
-    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Resultados canais");
+        iconePadrao("resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("resultados"), "Resultados canais");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosCanais, tabela);
 }
@@ -817,8 +935,8 @@ void MainWindow::garantirAbaResultadosCanaisDeclividadeMinima()
         "Revise a resposta hidr\u00E1ulica considerando o limite inferior de declividade admiss\u00EDvel.",
         "Sp min",
         tabela,
-        iconePadrao(style(), "resultados"));
-    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Sp min");
+        iconePadrao("resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("resultados"), "Sp min");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosCanaisDeclividadeMinima, tabela);
 }
@@ -842,8 +960,8 @@ void MainWindow::garantirAbaResultadosCanaisDeclividadeMaxima()
         "Avalie a condi\u00E7\u00E3o mais cr\u00EDtica para velocidades e tens\u00E3o cisalhante.",
         "Sp max",
         tabela,
-        iconePadrao(style(), "resultados"));
-    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Sp max");
+        iconePadrao("resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("resultados"), "Sp max");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosCanaisDeclividadeMaxima, tabela);
 }
@@ -867,8 +985,8 @@ void MainWindow::garantirAbaResultadosCanaisDeclividadeFinal()
         "Confer\u00EAncia da solu\u00E7\u00E3o adotada para execu\u00E7\u00E3o e compatibiliza\u00E7\u00E3o final.",
         "Sp final",
         tabela,
-        iconePadrao(style(), "resultados"));
-    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Sp final");
+        iconePadrao("resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("resultados"), "Sp final");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosCanaisDeclividadeFinal, tabela);
 }
@@ -891,8 +1009,8 @@ void MainWindow::garantirAbaResultadosBacias()
         "Consulte contribui\u00E7\u00F5es racionais e par\u00E2metros sintetizados para confer\u00EAncia do escoamento.",
         "Resultados bacias",
         tabela,
-        iconePadrao(style(), "resultados"));
-    const int indice = m_abasCentrais->addTab(pagina, iconePadrao(style(), "resultados"), "Resultados bacias");
+        iconePadrao("resultados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("resultados"), "Resultados bacias");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaResultadosBacias, tabela);
 }
@@ -921,16 +1039,22 @@ QTableView* MainWindow::criarTabelaBase()
     tabela->setCornerButtonEnabled(false);
     tabela->verticalHeader()->setVisible(true);
     tabela->verticalHeader()->setSectionsClickable(true);
-    tabela->verticalHeader()->setDefaultSectionSize(34);
+    tabela->verticalHeader()->setDefaultSectionSize(32);
     tabela->horizontalHeader()->setSectionsClickable(true);
     tabela->horizontalHeader()->setHighlightSections(true);
     tabela->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     tabela->horizontalHeader()->setStretchLastSection(false);
     tabela->horizontalHeader()->setMinimumSectionSize(90);
     tabela->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    tabela->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+    tabela->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     tabela->setStyleSheet(
-        "QTableView { alternate-background-color: #f7fbfe; selection-background-color: #d8eafb; selection-color: #123b5c; }"
-        "QTableView::item { padding: 8px 10px; }");
+        "QTableView { background: white; alternate-background-color: #f7f9fb; selection-background-color: #dce9f6; selection-color: #17394f; border: 1px solid #d7e0e8; }"
+        "QTableView::item { padding: 7px 10px; border-bottom: 1px solid #edf2f6; }"
+        "QTableCornerButton::section { background: #eef3f7; border: none; border-bottom: 1px solid #d7e0e8; }"
+        "QHeaderView::section { background: #eef3f7; color: #425a6b; border-right: none; border-left: none; }");
+    tabela->verticalHeader()->setStyleSheet(
+        "QHeaderView::section { background: #f6f9fb; color: #6d8190; padding: 0 8px; border: none; border-right: 1px solid #e5edf3; }");
     tabela->setContextMenuPolicy(Qt::CustomContextMenu);
 
     // Permite selecionar linha inteira ao clicar no cabeçalho vertical.
@@ -962,36 +1086,36 @@ QWidget* MainWindow::criarPaginaTabela(const QString& chave,
     pagina->setProperty("tabKey", chave);
 
     auto* layoutPrincipal = new QVBoxLayout(pagina);
-    layoutPrincipal->setContentsMargins(24, 24, 24, 24);
-    layoutPrincipal->setSpacing(18);
+    layoutPrincipal->setContentsMargins(20, 20, 20, 20);
+    layoutPrincipal->setSpacing(14);
 
     auto* cabecalho = new QFrame(pagina);
     cabecalho->setStyleSheet("background: white; border: 1px solid #d7e1e8; border-radius: 18px;");
     aplicarSombraSuave(cabecalho);
 
     auto* layoutCabecalho = new QHBoxLayout(cabecalho);
-    layoutCabecalho->setContentsMargins(20, 18, 20, 18);
-    layoutCabecalho->setSpacing(16);
+    layoutCabecalho->setContentsMargins(16, 14, 16, 14);
+    layoutCabecalho->setSpacing(12);
 
     auto* iconeTitulo = new QLabel(cabecalho);
-    iconeTitulo->setPixmap(icone.pixmap(20, 20));
-    iconeTitulo->setFixedSize(28, 28);
+    iconeTitulo->setPixmap(icone.pixmap(18, 18));
+    iconeTitulo->setFixedSize(26, 26);
     iconeTitulo->setAlignment(Qt::AlignCenter);
-    iconeTitulo->setStyleSheet("background: #edf5fb; border: 1px solid #d6e5f1; border-radius: 14px;");
+    iconeTitulo->setStyleSheet("background: #eff4f8; border: 1px solid #dbe6ef; border-radius: 13px;");
 
     auto* layoutTextos = new QVBoxLayout();
     layoutTextos->setSpacing(4);
 
     auto* labelTitulo = new QLabel(titulo, cabecalho);
-    labelTitulo->setStyleSheet("color: #163a59; font-size: 22px; font-weight: 700;");
+    labelTitulo->setStyleSheet("color: #163a59; font-size: 15px; font-weight: 700;");
 
     auto* labelDescricao = new QLabel(descricao, cabecalho);
     labelDescricao->setWordWrap(true);
-    labelDescricao->setStyleSheet("color: #60798d; font-size: 13px;");
+    labelDescricao->setStyleSheet("color: #60798d; font-size: 11px;");
 
     auto* etiquetaAba = new QLabel(tituloAba, cabecalho);
     etiquetaAba->setStyleSheet(
-        "background: #edf5fb; color: #45739d; border: 1px solid #d5e6f4; border-radius: 10px; padding: 6px 10px; font-weight: 600;");
+        "background: #eff4f8; color: #58788f; border: 1px solid #dbe6ef; border-radius: 10px; padding: 5px 9px; font-size: 10px; font-weight: 700;");
 
     layoutTextos->addWidget(labelTitulo);
     layoutTextos->addWidget(labelDescricao);
@@ -1011,12 +1135,19 @@ QPushButton* MainWindow::criarBotaoAcao(const QString& texto,
 {
     auto* botao = new QPushButton(icone, texto);
     botao->setCursor(Qt::PointingHandCursor);
-    botao->setMinimumHeight(42);
+    botao->setMinimumHeight(36);
+    botao->setIconSize(QSize(16, 16));
+    botao->setStyleSheet(
+        "QPushButton { background: #ffffff; color: #294658; border: 1px solid #d4dee7; border-radius: 10px; padding: 7px 12px; text-align: left; }"
+        "QPushButton:hover { background: #f0f5f9; border-color: #b9ccdc; }"
+        "QPushButton:pressed { background: #e2edf5; }"
+        "QPushButton:focus { border-color: #78a7cf; background: #f4f9fd; }");
     if (destaque) {
         botao->setStyleSheet(
-            "QPushButton { background: #2b6ea6; color: white; border: 1px solid #2b6ea6; font-weight: 600; }"
-            "QPushButton:hover { background: #225d8d; border-color: #225d8d; }"
-            "QPushButton:pressed { background: #1a4d75; }");
+            "QPushButton { background: #2f6b9b; color: white; border: 1px solid #2f6b9b; border-radius: 10px; padding: 7px 12px; text-align: left; font-weight: 600; }"
+            "QPushButton:hover { background: #285b84; border-color: #285b84; }"
+            "QPushButton:pressed { background: #1f4d6f; }"
+            "QPushButton:focus { border-color: #8db8dc; }");
     }
     return botao;
 }
@@ -1030,19 +1161,19 @@ QWidget* MainWindow::criarCardResumo(const QString& titulo,
     aplicarSombraSuave(card);
 
     auto* layout = new QVBoxLayout(card);
-    layout->setContentsMargins(20, 20, 20, 20);
-    layout->setSpacing(8);
+    layout->setContentsMargins(18, 18, 18, 18);
+    layout->setSpacing(6);
 
     auto* labelTitulo = new QLabel(titulo, card);
-    labelTitulo->setStyleSheet("color: #5d7890; font-size: 13px; font-weight: 600;");
+    labelTitulo->setStyleSheet("color: #657d8f; font-size: 11px; font-weight: 700;");
 
     auto* labelValor = new QLabel(valor, card);
     labelValor->setObjectName("valorResumo");
-    labelValor->setStyleSheet("color: #163a59; font-size: 28px; font-weight: 700;");
+    labelValor->setStyleSheet("color: #163a59; font-size: 20px; font-weight: 700;");
 
     auto* labelDescricao = new QLabel(descricao, card);
     labelDescricao->setWordWrap(true);
-    labelDescricao->setStyleSheet("color: #6c8597; font-size: 12px;");
+    labelDescricao->setStyleSheet("color: #6c8597; font-size: 11px;");
 
     layout->addWidget(labelTitulo);
     layout->addWidget(labelValor);
@@ -1323,19 +1454,19 @@ void MainWindow::calcularResultadosModelo()
 void MainWindow::configurarAcoesProjeto()
 {
     m_acaoSalvarProjeto = new QAction("Salvar projeto", this);
-    m_acaoSalvarProjeto->setIcon(iconePadrao(style(), "salvar"));
+    m_acaoSalvarProjeto->setIcon(iconePadrao("salvar"));
 
     m_acaoAbrirProjeto = new QAction("Abrir projeto", this);
-    m_acaoAbrirProjeto->setIcon(iconePadrao(style(), "abrir"));
+    m_acaoAbrirProjeto->setIcon(iconePadrao("abrir"));
 
     m_acaoImportarBaciasCsv = new QAction("Importar bacias (.csv)", this);
-    m_acaoImportarBaciasCsv->setIcon(iconePadrao(style(), "importar"));
+    m_acaoImportarBaciasCsv->setIcon(iconePadrao("importar"));
 
     m_acaoImportarUsoOcupacaoCsv = new QAction("Importar uso/ocupação (.csv)", this);
-    m_acaoImportarUsoOcupacaoCsv->setIcon(iconePadrao(style(), "importar"));
+    m_acaoImportarUsoOcupacaoCsv->setIcon(iconePadrao("importar"));
 
     m_acaoImportarCanaisCsv = new QAction("Importar canais (.csv)", this);
-    m_acaoImportarCanaisCsv->setIcon(iconePadrao(style(), "importar"));
+    m_acaoImportarCanaisCsv->setIcon(iconePadrao("importar"));
 
     connect(m_acaoSalvarProjeto, &QAction::triggered,
             this,
@@ -1370,6 +1501,7 @@ void MainWindow::configurarAcoesProjeto()
     QToolBar* barraProjeto = addToolBar("Projeto");
     barraProjeto->setMovable(false);
     barraProjeto->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    barraProjeto->setIconSize(QSize(16, 16));
     barraProjeto->addAction(m_acaoSalvarProjeto);
     barraProjeto->addAction(m_acaoAbrirProjeto);
     barraProjeto->addSeparator();
@@ -1966,7 +2098,7 @@ void MainWindow::importarCanaisDeCsv()
 void MainWindow::configurarAcoesCalculo()
 {
     m_acaoCalcularResultados = new QAction("Calcular resultados", this);
-    m_acaoCalcularResultados->setIcon(iconePadrao(style(), "calcular"));
+    m_acaoCalcularResultados->setIcon(iconePadrao("calcular"));
 
     connect(m_acaoCalcularResultados, &QAction::triggered,
             this,
@@ -1978,6 +2110,7 @@ void MainWindow::configurarAcoesCalculo()
     QToolBar* barraCalculo = addToolBar("Resultados");
     barraCalculo->setMovable(false);
     barraCalculo->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    barraCalculo->setIconSize(QSize(16, 16));
     barraCalculo->addAction(m_acaoCalcularResultados);
 }
 

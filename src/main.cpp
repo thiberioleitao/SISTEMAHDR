@@ -16,7 +16,7 @@ int main(int argc, char* argv[])
     app.setOrganizationName("SISTEMAHDR");
 
     // Define uma tipografia consistente para toda a interface.
-    QFont fonteAplicacao("Segoe UI", 10);
+    QFont fonteAplicacao("Segoe UI", 9);
     fonteAplicacao.setStyleStrategy(QFont::PreferAntialias);
     app.setFont(fonteAplicacao);
 
