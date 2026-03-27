@@ -24,10 +24,12 @@ class QAction;
 
 class DelegadoSecaoTransversalComboBox;
 class DelegadoGeometriaSecaoComboBox;
+class DelegadoRevestimentoCanalComboBox;
 class DelegadoUsoOcupacaoSoloComboBox;
 class ModeloTabelaCanais;
 class ModeloTabelaBacias;
 class ModeloTabelaSecoesTransversais;
+class ModeloTabelaRevestimentos;
 class ModeloTabelaUsoOcupacaoSolo;
 class QJsonObject;
 
@@ -94,6 +96,11 @@ private:
      * @brief Garante que a aba de bacias exista e a torna ativa.
      */
     void garantirAbaBacias();
+
+    /**
+     * @brief Garante que a aba de revestimentos exista e a torna ativa.
+     */
+    void garantirAbaRevestimentos();
 
     /**
      * @brief Garante que a aba de uso e ocupação do solo exista e a torna ativa.
@@ -381,6 +388,7 @@ private:
 
     /** @brief Modelos de tabela para exibir canais e bacias. */
     ModeloTabelaSecoesTransversais* m_modeloSecoes = nullptr;
+    ModeloTabelaRevestimentos* m_modeloRevestimentos = nullptr;
     ModeloTabelaUsoOcupacaoSolo* m_modeloUsoOcupacaoSolo = nullptr;
     ModeloTabelaCanais* m_modeloCanais = nullptr;
     ModeloTabelaBacias* m_modeloBacias = nullptr;
@@ -389,6 +397,7 @@ private:
 
     DelegadoSecaoTransversalComboBox* m_delegadoSecaoCanais = nullptr;
     DelegadoGeometriaSecaoComboBox* m_delegadoGeometriaSecoes = nullptr;
+    DelegadoRevestimentoCanalComboBox* m_delegadoRevestimentoSecoes = nullptr;
     DelegadoUsoOcupacaoSoloComboBox* m_delegadoUsoOcupacaoBacias = nullptr;
 
     /** @brief Mapeamento das tabelas por chave para acesso rapido. */

@@ -1,12 +1,24 @@
 #include "ModeloTabelaSecoesTransversais.h"
 
+#include "domain/RevestimentoCanal.h"
+
 namespace
 {
+/**
+ * @brief Indica se a geometria informada corresponde a uma secao semicircular.
+ * @param geometria Texto armazenado no cadastro.
+ * @return true quando a geometria for semicircular.
+ */
 bool ehGeometriaSemicircular(const QString& geometria)
 {
     return geometria.trimmed().compare("Semicircular", Qt::CaseInsensitive) == 0;
 }
 
+/**
+ * @brief Normaliza o texto da geometria para os valores padrao do sistema.
+ * @param geometria Texto informado na edicao.
+ * @return Nome de geometria normalizado.
+ */
 QString normalizarGeometria(const QString& geometria)
 {
     const QString texto = geometria.trimmed();
@@ -14,6 +26,65 @@ QString normalizarGeometria(const QString& geometria)
         return "Semicircular";
     }
     return "Trapezoidal";
+}
+
+/**
+ * @brief Retorna um valor seguro para a altura maxima quando o dado vier vazio.
+ * @param registro Registro avaliado.
+ * @return Altura maxima padrao em metros.
+ */
+QString alturaMaximaPadraoTexto(const RegistroSecaoTransversal& registro)
+{
+    if (ehGeometriaSemicircular(registro.geometria)) {
+        return registro.diametroM.trimmed().isEmpty() ? QString("0.50") : registro.diametroM.trimmed();
+    }
+
+    return "1.00";
+}
+
+/**
+ * @brief Retorna um valor seguro para a folga minima quando o dado vier vazio.
+ * @return Folga padrao em metros.
+ */
+QString folgaPadraoTexto()
+{
+    return "0.10";
+}
+
+/**
+ * @brief Define o revestimento padrao conforme a geometria principal da secao.
+ * @param geometria Geometria cadastrada para a secao.
+ * @return Nome do revestimento sugerido.
+ */
+QString revestimentoPadraoParaGeometria(const QString& geometria)
+{
+    if (ehGeometriaSemicircular(geometria)) {
+        return "Concreto";
+    }
+    return "Grama";
+}
+
+/**
+ * @brief Garante defaults seguros ao carregar registros antigos sem os novos campos.
+ * @param registro Registro a ser normalizado.
+ */
+void normalizarCamposOpcionais(RegistroSecaoTransversal* registro)
+{
+    if (!registro) return;
+
+    registro->geometria = normalizarGeometria(registro->geometria);
+
+    if (registro->alturaMaximaM.trimmed().isEmpty()) {
+        registro->alturaMaximaM = alturaMaximaPadraoTexto(*registro);
+    }
+
+    if (registro->folgaMinimaM.trimmed().isEmpty()) {
+        registro->folgaMinimaM = folgaPadraoTexto();
+    }
+
+    if (registro->revestimento.trimmed().isEmpty()) {
+        registro->revestimento = revestimentoPadraoParaGeometria(registro->geometria);
+    }
 }
 }
 
@@ -49,12 +120,28 @@ QVariant ModeloTabelaSecoesTransversais::data(const QModelIndex& index, int role
         case ColunaBaseMenor: return registro.baseMenorM;
         case ColunaTalude: return registro.talude;
         case ColunaDiametro: return registro.diametroM;
+        case ColunaAlturaMaxima: return registro.alturaMaximaM;
+        case ColunaFolgaMinima: return registro.folgaMinimaM;
+        case ColunaRevestimento: return registro.revestimento;
         default: return QVariant();
         }
     }
 
+    if (role == Qt::ToolTipRole) {
+        switch (index.column()) {
+        case ColunaAlturaMaxima:
+            return "Altura maxima util da secao usada para verificar a folga.";
+        case ColunaFolgaMinima:
+            return "Folga minima livre exigida entre a lamina d'agua e o topo da secao.";
+        case ColunaRevestimento:
+            return "Revestimento hidraulico associado a esta secao transversal.";
+        default:
+            return QVariant();
+        }
+    }
+
     if (role == Qt::TextAlignmentRole) {
-        if (index.column() >= ColunaBaseMenor) {
+        if (index.column() >= ColunaBaseMenor && index.column() != ColunaRevestimento) {
             return Qt::AlignCenter;
         }
     }
@@ -64,6 +151,19 @@ QVariant ModeloTabelaSecoesTransversais::data(const QModelIndex& index, int role
 
 QVariant ModeloTabelaSecoesTransversais::headerData(int section, Qt::Orientation orientation, int role) const
 {
+    if (orientation == Qt::Horizontal && role == Qt::ToolTipRole) {
+        switch (section) {
+        case ColunaAlturaMaxima:
+            return "Altura maxima da secao usada para verificar a folga.";
+        case ColunaFolgaMinima:
+            return "Criterio de folga minima usado nas verificacoes hidraulicas.";
+        case ColunaRevestimento:
+            return "Classe de revestimento usada para Manning e limites admissiveis.";
+        default:
+            return QVariant();
+        }
+    }
+
     if (role != Qt::DisplayRole) return QVariant();
 
     if (orientation == Qt::Horizontal) {
@@ -73,6 +173,9 @@ QVariant ModeloTabelaSecoesTransversais::headerData(int section, Qt::Orientation
         case ColunaBaseMenor: return "b_menor (m)";
         case ColunaTalude: return "Talude / m";
         case ColunaDiametro: return "D (m)";
+        case ColunaAlturaMaxima: return "H max. (m)";
+        case ColunaFolgaMinima: return "Folga min. (m)";
+        case ColunaRevestimento: return "Revestimento";
         default: return QVariant();
         }
     }
@@ -116,7 +219,7 @@ bool ModeloTabelaSecoesTransversais::setData(const QModelIndex& index, const QVa
     case ColunaGeometria: {
         registro.geometria = normalizarGeometria(value.toString());
 
-        // Ajusta campos compatíveis com a geometria selecionada.
+        // Mantem coerencia entre a geometria escolhida e os campos habilitados na linha.
         if (ehGeometriaSemicircular(registro.geometria)) {
             registro.baseMenorM = "-";
             registro.talude = "-";
@@ -133,6 +236,14 @@ bool ModeloTabelaSecoesTransversais::setData(const QModelIndex& index, const QVa
             }
             registro.diametroM = "-";
         }
+
+        if (registro.alturaMaximaM.trimmed().isEmpty() || registro.alturaMaximaM.trimmed() == "-") {
+            registro.alturaMaximaM = alturaMaximaPadraoTexto(registro);
+        }
+
+        if (registro.revestimento.trimmed().isEmpty()) {
+            registro.revestimento = revestimentoPadraoParaGeometria(registro.geometria);
+        }
         break;
     }
     case ColunaBaseMenor:
@@ -146,17 +257,39 @@ bool ModeloTabelaSecoesTransversais::setData(const QModelIndex& index, const QVa
     case ColunaDiametro:
         if (!ehGeometriaSemicircular(registro.geometria)) return false;
         registro.diametroM = value.toString().trimmed();
+        if (registro.alturaMaximaM.trimmed().isEmpty() || registro.alturaMaximaM.trimmed() == "-") {
+            registro.alturaMaximaM = registro.diametroM;
+        }
         break;
-    default: return false;
+    case ColunaAlturaMaxima:
+        registro.alturaMaximaM = value.toString().trimmed();
+        if (registro.alturaMaximaM.isEmpty()) {
+            registro.alturaMaximaM = alturaMaximaPadraoTexto(registro);
+        }
+        break;
+    case ColunaFolgaMinima:
+        registro.folgaMinimaM = value.toString().trimmed();
+        if (registro.folgaMinimaM.isEmpty()) {
+            registro.folgaMinimaM = folgaPadraoTexto();
+        }
+        break;
+    case ColunaRevestimento:
+        registro.revestimento = value.toString().trimmed();
+        if (registro.revestimento.isEmpty()) {
+            registro.revestimento = revestimentoPadraoParaGeometria(registro.geometria);
+        }
+        break;
+    default:
+        return false;
     }
 
     if (index.column() == ColunaGeometria) {
         const QModelIndex inicioLinha = this->index(index.row(), 0);
         const QModelIndex fimLinha = this->index(index.row(), TotalColunas - 1);
-        emit dataChanged(inicioLinha, fimLinha, { Qt::DisplayRole, Qt::EditRole });
+        emit dataChanged(inicioLinha, fimLinha, { Qt::DisplayRole, Qt::EditRole, Qt::ToolTipRole });
     }
     else {
-        emit dataChanged(index, index, { Qt::DisplayRole, Qt::EditRole });
+        emit dataChanged(index, index, { Qt::DisplayRole, Qt::EditRole, Qt::ToolTipRole });
     }
 
     return true;
@@ -166,14 +299,14 @@ void ModeloTabelaSecoesTransversais::carregarPadrao()
 {
     beginResetModel();
     m_registros = {
-        {"VTD-1", "Trapezoidal", "0.30", "1.00", "-"},
-        {"VTD-2", "Trapezoidal", "0.50", "1.00", "-"},
-        {"CTD-1", "Trapezoidal", "0.50", "1.00", "-"},
-        {"CSD-1", "Semicircular", "-", "-", "0.40"},
-        {"CSD-2", "Semicircular", "-", "-", "0.50"},
-        {"CSD-3", "Semicircular", "-", "-", "0.60"},
-        {"CSD-4", "Semicircular", "-", "-", "0.80"},
-        {"CSD-5", "Semicircular", "-", "-", "1.00"}
+        {"VTD-1", "Trapezoidal", "0.30", "1.00", "-", "1.00", "0.10", "Grama"},
+        {"VTD-2", "Trapezoidal", "0.50", "1.00", "-", "1.00", "0.10", "Grama"},
+        {"CTD-1", "Trapezoidal", "0.50", "1.00", "-", "1.00", "0.12", "Concreto"},
+        {"CSD-1", "Semicircular", "-", "-", "0.40", "0.40", "0.08", "Concreto"},
+        {"CSD-2", "Semicircular", "-", "-", "0.50", "0.50", "0.08", "Concreto"},
+        {"CSD-3", "Semicircular", "-", "-", "0.60", "0.60", "0.08", "Concreto"},
+        {"CSD-4", "Semicircular", "-", "-", "0.80", "0.80", "0.10", "Concreto"},
+        {"CSD-5", "Semicircular", "-", "-", "1.00", "1.00", "0.10", "Concreto"}
     };
     endResetModel();
 }
@@ -187,5 +320,39 @@ void ModeloTabelaSecoesTransversais::definirRegistros(const QVector<RegistroSeca
 {
     beginResetModel();
     m_registros = registros;
+    for (RegistroSecaoTransversal& registro : m_registros) {
+        normalizarCamposOpcionais(&registro);
+    }
     endResetModel();
+}
+
+bool ModeloTabelaSecoesTransversais::obterRegistroPorNomenclatura(const QString& nomenclatura,
+                                                                  RegistroSecaoTransversal* registro) const
+{
+    const QString idAlvo = nomenclatura.trimmed();
+    for (const RegistroSecaoTransversal& item : m_registros) {
+        if (item.nomenclatura.trimmed().compare(idAlvo, Qt::CaseInsensitive) != 0) continue;
+
+        if (registro) {
+            *registro = item;
+            normalizarCamposOpcionais(registro);
+        }
+        return true;
+    }
+
+    return false;
+}
+
+QStringList ModeloTabelaSecoesTransversais::nomesRevestimentosDisponiveis() const
+{
+    if (!m_nomesRevestimentosDisponiveis.isEmpty()) {
+        return m_nomesRevestimentosDisponiveis;
+    }
+
+    return RevestimentoCanal::nomesPadrao();
+}
+
+void ModeloTabelaSecoesTransversais::definirNomesRevestimentosDisponiveis(const QStringList& nomes)
+{
+    m_nomesRevestimentosDisponiveis = nomes;
 }
