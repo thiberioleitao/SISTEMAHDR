@@ -1,5 +1,5 @@
 ﻿{
-  "version": 3,
+  "version": 4,
   "configurePresets": [
     {
       "name": "windows-base",
@@ -32,14 +32,6 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
-    }
-  ],
-  "launchPresets": [
-    {
-      "name": "SISTEMAHDR",
-      "displayName": "SISTEMAHDR",
-      "configurePreset": "x64-debug",
-      "target": "SISTEMAHDR"
     }
   ]
 }
