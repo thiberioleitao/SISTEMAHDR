@@ -84,5 +84,6 @@ target_link_libraries(SISTEMAHDR
 
 if (MSVC)
     # Garante leitura de fonte e literais em UTF-8 no compilador da Microsoft.
-    target_compile_options(SISTEMAHDR PRIVATE /utf-8)
+    # Qt 6 em MSVC exige conformidade da linguagem e valor correto para __cplusplus.
+    target_compile_options(SISTEMAHDR PRIVATE /utf-8 /permissive- /Zc:__cplusplus)
 endif()
