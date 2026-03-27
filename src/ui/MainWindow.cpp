@@ -5,6 +5,7 @@
 #include "ui/delegates/DelegadoUsoOcupacaoSoloComboBox.h"
 
 #include "domain/IDF.h"
+#include "domain/CalculoHidraulicoCanal.h"
 #include "domain/RedeHidrologica.h"
 
 #include "ui/modelos/ModeloTabelaBacias.h"
@@ -1502,7 +1503,8 @@ void MainWindow::atualizarModeloResultadosCanais()
           "I_Atotal_TR (mm/h)", "Qp (dimensionamento)", "Se\u00E7\u00E3o",
           "Hn_Sp(min)", "T_Sp(min)", "Pm_Sp(min)", "Am_Sp(min)", "Rh_Sp(min)", "Ph_Sp(min)", "Folga_Sp(min)", "V_Sp(min)", "A(%)_Sp(min)", "Fr_V_Sp(min)", "tau_o_min",
           "Hn_Sp(max)", "T_Sp(max)", "Pm_Sp(max)", "Am_Sp(max)", "Rh_Sp(max)", "Ph_Sp(max)", "Folga_Sp(max)", "V_Sp(max)", "A(%)_Sp(max)", "Fr_V_Sp(max)", "tau_o_max",
-          "Hn_Sp(final)", "V_Sp(final)", "tau_o_final" });
+          "Hn_Sp(final)", "V_Sp(final)", "tau_o_final",
+          "Crit_Qp_Smin", "Crit_Qp_Smax", "Crit_Altura_Smin", "Crit_V_Smax", "Crit_Geral" });
 
     const QVector<Canal>& canais = m_modeloCanais->canais();
     for (int linha = 0; linha < canais.size(); ++linha) {
@@ -1562,6 +1564,20 @@ void MainWindow::atualizarModeloResultadosCanais()
         const double rhFinal = canalFinal.raioHidraulico(hFinal);
         const double tauFinal = calcularTensaoCisalhantePa(rhFinal, std::max(0.0, canal.declividadeFinal()));
 
+        // Critérios de verificação hidráulica do canal.
+        constexpr double kVelocidadeMaximaAdmissivelMps = 5.0;
+        EntradaVerificacaoCanal entradaVerificacao;
+        entradaVerificacao.qpHidrologiaM3s = qDimensionamento;
+        entradaVerificacao.qpHidraulicaSMinM3s = canalMin.vazaoManning(std::max(0.0, hMin));
+        entradaVerificacao.qpHidraulicaSMaxM3s = canalMax.vazaoManning(std::max(0.0, hMax));
+        entradaVerificacao.alturaSMinM = std::max(0.0, hMin);
+        entradaVerificacao.alturaMaximaSecaoM = alturaMaxSecaoM;
+        entradaVerificacao.folgaMinimaM = folgaMin;
+        entradaVerificacao.velocidadeSMaxMps = std::max(0.0, vMax);
+        entradaVerificacao.velocidadeMaximaAdmissivelMps = kVelocidadeMaximaAdmissivelMps;
+
+        const ResultadoVerificacaoCanal resultadoVerificacao = CalculoHidraulicoCanal::verificarCriterios(entradaVerificacao);
+
         auto textoNumero = [](double valor, int casas = 3) {
             return std::isfinite(valor)
                        ? QString::number(valor, 'f', casas)
@@ -1602,7 +1618,12 @@ void MainWindow::atualizarModeloResultadosCanais()
                    << new QStandardItem(textoNumero(tauMax, 2))
                    << new QStandardItem(textoNumero(hFinal, 3))
                    << new QStandardItem(textoNumero(vFinal, 3))
-                   << new QStandardItem(textoNumero(tauFinal, 2));
+                   << new QStandardItem(textoNumero(tauFinal, 2))
+                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioQpSMin))
+                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioQpSMax))
+                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioAlturaSMin))
+                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioVelocidadeSMax))
+                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.todosAtendidos()));
 
         for (QStandardItem* item : itensLinha) {
             item->setEditable(false);

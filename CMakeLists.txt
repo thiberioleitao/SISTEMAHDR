@@ -36,6 +36,7 @@ add_executable(SISTEMAHDR
     src/domain/Canal.cpp
     src/domain/Bueiro.cpp
     src/domain/BaciaContribuicao.cpp
+    src/domain/CalculoHidraulicoCanal.cpp
     src/domain/TipoUsoOcupacaoSolo.cpp
     src/domain/IDF.cpp
     src/domain/MetodoRacionalTransformacao.cpp
@@ -50,6 +51,7 @@ add_executable(SISTEMAHDR
     src/domain/Canal.h
     src/domain/Bueiro.h
     src/domain/BaciaContribuicao.h
+    src/domain/CalculoHidraulicoCanal.h
     src/domain/TipoUsoOcupacaoSolo.h
     
     src/domain/IDF.h
