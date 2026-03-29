@@ -29,8 +29,10 @@ add_executable(SISTEMAHDR
     src/ui/modelos/ModeloTabelaCanais.cpp
     src/ui/modelos/ModeloTabelaBacias.cpp
     src/ui/modelos/ModeloTabelaSecoesTransversais.cpp
+    src/ui/modelos/ModeloTabelaRevestimentos.cpp
     src/ui/modelos/ModeloTabelaUsoOcupacaoSolo.cpp
     src/ui/delegates/DelegadoGeometriaSecaoComboBox.cpp
+    src/ui/delegates/DelegadoRevestimentoCanalComboBox.cpp
     src/ui/delegates/DelegadoSecaoTransversalComboBox.cpp
     src/ui/delegates/DelegadoUsoOcupacaoSoloComboBox.cpp
     src/domain/Canal.cpp
@@ -68,8 +70,10 @@ add_executable(SISTEMAHDR
     src/ui/modelos/ModeloTabelaCanais.h
     src/ui/modelos/ModeloTabelaBacias.h
     src/ui/modelos/ModeloTabelaSecoesTransversais.h
+    src/ui/modelos/ModeloTabelaRevestimentos.h
     src/ui/modelos/ModeloTabelaUsoOcupacaoSolo.h
     src/ui/delegates/DelegadoGeometriaSecaoComboBox.h
+    src/ui/delegates/DelegadoRevestimentoCanalComboBox.h
     src/ui/delegates/DelegadoSecaoTransversalComboBox.h
     src/ui/delegates/DelegadoUsoOcupacaoSoloComboBox.h
 )

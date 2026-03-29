@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include "ui/delegates/DelegadoGeometriaSecaoComboBox.h"
+#include "ui/delegates/DelegadoRevestimentoCanalComboBox.h"
 #include "ui/delegates/DelegadoSecaoTransversalComboBox.h"
 #include "ui/delegates/DelegadoUsoOcupacaoSoloComboBox.h"
 
@@ -10,6 +11,7 @@
 
 #include "ui/modelos/ModeloTabelaBacias.h"
 #include "ui/modelos/ModeloTabelaCanais.h"
+#include "ui/modelos/ModeloTabelaRevestimentos.h"
 #include "ui/modelos/ModeloTabelaSecoesTransversais.h"
 #include "ui/modelos/ModeloTabelaUsoOcupacaoSolo.h"
 
@@ -20,6 +22,7 @@
 #include <QGraphicsDropShadowEffect>
 #include <QApplication>
 #include <QClipboard>
+#include <QColor>
 #include <QDockWidget>
 #include <QGridLayout>
 #include <QFile>
@@ -64,6 +67,7 @@ constexpr auto kAbaInicial = "aba_inicial";
 constexpr auto kAbaSecoes = "aba_secoes";
 constexpr auto kAbaCanais = "aba_canais";
 constexpr auto kAbaBacias = "aba_bacias";
+constexpr auto kAbaRevestimentos = "aba_revestimentos";
 constexpr auto kAbaUsoOcupacaoSolo = "aba_uso_ocupacao_solo";
 constexpr auto kAbaResultadosCanais = "aba_resultados_canais";
 constexpr auto kAbaResultadosCanaisDeclividadeMinima = "aba_resultados_canais_declividade_minima";
@@ -220,17 +224,17 @@ void configurarVisibilidadeColunasResultadosCanais(QTableView* tabela, const QSt
     if (!tabela || !tabela->model()) return;
 
     // Colunas base comuns para todas as visões de resultados dos canais.
-    const QSet<int> colunasBase = { 0, 1, 2, 3, 4, 5, 6, 7, 8 };
+    const QSet<int> colunasBase = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
     QSet<int> colunasPermitidas = colunasBase;
 
     if (modoDeclividade == "min") {
-        for (int coluna = 9; coluna <= 19; ++coluna) colunasPermitidas.insert(coluna);
+        for (int coluna = 12; coluna <= 22; ++coluna) colunasPermitidas.insert(coluna);
     }
     else if (modoDeclividade == "max") {
-        for (int coluna = 20; coluna <= 30; ++coluna) colunasPermitidas.insert(coluna);
+        for (int coluna = 23; coluna <= 33; ++coluna) colunasPermitidas.insert(coluna);
     }
     else if (modoDeclividade == "final") {
-        for (int coluna = 31; coluna <= 33; ++coluna) colunasPermitidas.insert(coluna);
+        for (int coluna = 34; coluna <= 36; ++coluna) colunasPermitidas.insert(coluna);
     }
     else {
         const int totalColunas = tabela->model()->columnCount();
@@ -246,35 +250,107 @@ void configurarVisibilidadeColunasResultadosCanais(QTableView* tabela, const QSt
     }
 }
 
-double alturaMaximaSecaoPorId(const QString& idSecao,
-                              const ModeloTabelaSecoesTransversais* modeloSecoes)
+/**
+ * @brief Converte um texto vindo do cadastro de secoes para numero.
+ * @param texto Valor textual armazenado no modelo.
+ * @return Numero convertido com protecao para vazios e simbolos.
+ */
+double converterTextoSecaoParaNumero(QString texto)
 {
-    if (!modeloSecoes) return 1.0;
+    texto = texto.trimmed();
+    texto.remove('%');
+    texto.remove('"');
+    texto.replace(',', '.');
+    return texto.toDouble();
+}
 
-    const QString idAlvo = idSecao.trimmed();
-    const int totalLinhas = modeloSecoes->rowCount();
-    for (int linha = 0; linha < totalLinhas; ++linha) {
-        const QString idLinha = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaNomenclatura)
-                                    .data(Qt::DisplayRole)
-                                    .toString()
-                                    .trimmed();
-        if (idLinha.compare(idAlvo, Qt::CaseInsensitive) != 0) continue;
+/**
+ * @brief Procura um registro de secao e devolve um fallback seguro quando ele nao existe.
+ * @param idSecao Identificador da secao procurada.
+ * @param modeloSecoes Modelo de secoes cadastrado na interface.
+ * @return Registro da secao localizada ou um registro padrao seguro.
+ */
+RegistroSecaoTransversal obterSecaoPorId(const QString& idSecao,
+                                         const ModeloTabelaSecoesTransversais* modeloSecoes)
+{
+    RegistroSecaoTransversal registro;
+    if (modeloSecoes && modeloSecoes->obterRegistroPorNomenclatura(idSecao, &registro)) {
+        return registro;
+    }
 
-        const QString geometria = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaGeometria)
-                                      .data(Qt::DisplayRole)
-                                      .toString();
-        if (geometria.contains("Semicircular", Qt::CaseInsensitive)) {
-            const double diametro = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaDiametro)
-                                         .data(Qt::DisplayRole)
-                                         .toString()
-                                         .toDouble();
-            return std::max(0.0, diametro);
-        }
+    registro.nomenclatura = idSecao.trimmed();
+    registro.geometria = "Trapezoidal";
+    registro.baseMenorM = "0.50";
+    registro.talude = "1.00";
+    registro.diametroM = "-";
+    registro.alturaMaximaM = "1.00";
+    registro.folgaMinimaM = "0.10";
+    registro.revestimento = RevestimentoCanal::revestimentoPadraoSeguro().nome();
+    return registro;
+}
 
-        return 1.0;
+/**
+ * @brief Retorna a altura maxima fisica da secao cadastrada.
+ * @param registro Registro textual da secao.
+ * @return Altura maxima utilizavel da secao em metros.
+ */
+double alturaMaximaSecao(const RegistroSecaoTransversal& registro)
+{
+    const double alturaMaxima = std::max(0.0, converterTextoSecaoParaNumero(registro.alturaMaximaM));
+    if (alturaMaxima > 0.0) {
+        return alturaMaxima;
+    }
+
+    if (registro.geometria.contains("Semicircular", Qt::CaseInsensitive)) {
+        return std::max(0.0, converterTextoSecaoParaNumero(registro.diametroM));
     }
 
     return 1.0;
+}
+
+/**
+ * @brief Retorna a altura maxima fisica da secao associada ao ID informado.
+ * @param idSecao Identificador da secao procurada.
+ * @param modeloSecoes Modelo com o cadastro de secoes.
+ * @return Altura maxima utilizavel da secao em metros.
+ */
+double alturaMaximaSecaoPorId(const QString& idSecao,
+                              const ModeloTabelaSecoesTransversais* modeloSecoes)
+{
+    return alturaMaximaSecao(obterSecaoPorId(idSecao, modeloSecoes));
+}
+
+/**
+ * @brief Retorna o criterio de folga minimo associado a uma secao.
+ * @param idSecao Identificador da secao procurada.
+ * @param modeloSecoes Modelo com o cadastro de secoes.
+ * @return Folga minima exigida em metros.
+ */
+double folgaMinimaSecaoPorId(const QString& idSecao,
+                             const ModeloTabelaSecoesTransversais* modeloSecoes)
+{
+    const RegistroSecaoTransversal registro = obterSecaoPorId(idSecao, modeloSecoes);
+    return std::max(0.0, converterTextoSecaoParaNumero(registro.folgaMinimaM));
+}
+
+/**
+ * @brief Retorna o revestimento associado a uma secao transversal.
+ * @param idSecao Identificador da secao procurada.
+ * @param modeloSecoes Modelo com o cadastro de secoes.
+ * @return Revestimento padronizado usado no canal.
+ */
+RevestimentoCanal revestimentoSecaoPorId(const QString& idSecao,
+                                         const ModeloTabelaSecoesTransversais* modeloSecoes,
+                                         const ModeloTabelaRevestimentos* modeloRevestimentos)
+{
+    const RegistroSecaoTransversal registro = obterSecaoPorId(idSecao, modeloSecoes);
+    if (modeloRevestimentos) {
+        if (const RevestimentoCanal* revestimento = modeloRevestimentos->revestimentoPorNome(registro.revestimento)) {
+            return *revestimento;
+        }
+    }
+
+    return RevestimentoCanal::revestimentoPorNome(registro.revestimento);
 }
 
 double calcularFroude(double velocidade, double areaMolhada, double larguraSuperficial)
@@ -295,58 +371,27 @@ double calcularTensaoCisalhantePa(double raioHidraulico, double declividade)
 
 bool aplicarSecaoTransversalNoCanal(Canal* canal,
                                     const QString& idSecao,
-                                    const ModeloTabelaSecoesTransversais* modeloSecoes)
+                                    const ModeloTabelaSecoesTransversais* modeloSecoes,
+                                    const ModeloTabelaRevestimentos* modeloRevestimentos)
 {
     if (!canal || !modeloSecoes) return false;
 
     const QString idSecaoNormalizado = idSecao.trimmed();
     if (idSecaoNormalizado.isEmpty()) return false;
 
-    const int totalLinhas = modeloSecoes->rowCount();
-    for (int linha = 0; linha < totalLinhas; ++linha) {
-        const QString idLinha = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaNomenclatura)
-                                    .data(Qt::DisplayRole)
-                                    .toString()
-                                    .trimmed();
-        if (idLinha.compare(idSecaoNormalizado, Qt::CaseInsensitive) != 0) continue;
+    const RegistroSecaoTransversal registro = obterSecaoPorId(idSecaoNormalizado, modeloSecoes);
+    canal->setRevestimento(revestimentoSecaoPorId(idSecaoNormalizado, modeloSecoes, modeloRevestimentos));
 
-        const QString geometria = modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaGeometria)
-                                      .data(Qt::DisplayRole)
-                                      .toString();
-
-        if (geometria.compare("Semicircular", Qt::CaseInsensitive) == 0) {
-            const double diametro = std::max(0.0,
-                modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaDiametro)
-                    .data(Qt::DisplayRole)
-                    .toString()
-                    .toDouble());
-
-            canal->setSecaoSemicircular(SecaoTransversalSemicircular(diametro));
-            if (canal->coeficienteManning() <= 0.0) {
-                canal->setCoeficienteManning(0.015);
-            }
-            return true;
-        }
-
-        const double larguraFundo = std::max(0.0,
-            modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaBaseMenor)
-                .data(Qt::DisplayRole)
-                .toString()
-                .toDouble());
-        const double taludeLateral = std::max(0.0,
-            modeloSecoes->index(linha, ModeloTabelaSecoesTransversais::ColunaTalude)
-                .data(Qt::DisplayRole)
-                .toString()
-                .toDouble());
-
-        canal->setSecaoTransversal(SecaoTransversalTrapezoidal(larguraFundo, taludeLateral));
-        if (canal->coeficienteManning() <= 0.0) {
-            canal->setCoeficienteManning(0.025);
-        }
+    if (registro.geometria.compare("Semicircular", Qt::CaseInsensitive) == 0) {
+        const double diametro = std::max(0.0, converterTextoSecaoParaNumero(registro.diametroM));
+        canal->setSecaoSemicircular(SecaoTransversalSemicircular(diametro));
         return true;
     }
 
-    return false;
+    const double larguraFundo = std::max(0.0, converterTextoSecaoParaNumero(registro.baseMenorM));
+    const double taludeLateral = std::max(0.0, converterTextoSecaoParaNumero(registro.talude));
+    canal->setSecaoTransversal(SecaoTransversalTrapezoidal(larguraFundo, taludeLateral));
+    return true;
 }
 
 double converterTextoParaNumeroCsv(QString texto)
@@ -356,6 +401,45 @@ double converterTextoParaNumeroCsv(QString texto)
     texto.remove('"');
     texto.replace(',', '.');
     return texto.toDouble();
+}
+
+/**
+ * @brief Aplica o estilo visual consolidado em todos os itens de uma linha de resultados.
+ * @param itensLinha Lista de itens que compoem a linha.
+ * @param resultado Resultado consolidado da verificacao hidraulica.
+ */
+void aplicarEstiloLinhaResultado(QList<QStandardItem*>& itensLinha,
+                                 const ResultadoVerificacaoCanal& resultado)
+{
+    QColor corFundo;
+    QColor corTexto("#111111");
+    QString descricaoStatus;
+
+    if (resultado.situacaoVisual == SituacaoVisualResultadoCanal::NaoAtende) {
+        corFundo = QColor("#fde7e7");
+        descricaoStatus = "Nao atende";
+    }
+    else if (resultado.situacaoVisual == SituacaoVisualResultadoCanal::AtendeNoLimite) {
+        corFundo = QColor("#dbeafe");
+        descricaoStatus = "Atende no limite";
+    }
+    else {
+        descricaoStatus = "Atende";
+    }
+
+    const QString tooltip = QString("Status visual: %1. %2")
+                                .arg(descricaoStatus, resultado.detalheVisual);
+
+    for (QStandardItem* item : itensLinha) {
+        if (!item) continue;
+        item->setEditable(false);
+        item->setToolTip(tooltip);
+
+        if (corFundo.isValid()) {
+            item->setData(corFundo, Qt::BackgroundRole);
+            item->setData(corTexto, Qt::ForegroundRole);
+        }
+    }
 }
 }
 
@@ -368,6 +452,7 @@ MainWindow::MainWindow(QWidget* parent)
     configurarPainelContextual();
 
     m_modeloSecoes = new ModeloTabelaSecoesTransversais(this);
+    m_modeloRevestimentos = new ModeloTabelaRevestimentos(this);
     m_modeloUsoOcupacaoSolo = new ModeloTabelaUsoOcupacaoSolo(this);
     m_modeloCanais = new ModeloTabelaCanais(this);
     m_modeloBacias = new ModeloTabelaBacias(this);
@@ -375,8 +460,10 @@ MainWindow::MainWindow(QWidget* parent)
     m_modeloResultadosBacias = new QStandardItemModel(this);
     m_delegadoSecaoCanais = new DelegadoSecaoTransversalComboBox(m_modeloSecoes, this);
     m_delegadoGeometriaSecoes = new DelegadoGeometriaSecaoComboBox(this);
+    m_delegadoRevestimentoSecoes = new DelegadoRevestimentoCanalComboBox(m_modeloSecoes, this);
     m_delegadoUsoOcupacaoBacias = new DelegadoUsoOcupacaoSoloComboBox(m_modeloUsoOcupacaoSolo, this);
 
+    m_modeloSecoes->definirNomesRevestimentosDisponiveis(m_modeloRevestimentos->nomesDisponiveis());
     m_modeloBacias->definirModeloUsoOcupacaoSolo(m_modeloUsoOcupacaoSolo);
 
     prepararModeloCanais();
@@ -412,6 +499,14 @@ MainWindow::MainWindow(QWidget* parent)
             [this]() {
                 calcularResultadosModelo();
                 atualizarDashboard();
+                atualizarPainelContextual();
+            });
+
+    connect(m_modeloRevestimentos, &ModeloTabelaRevestimentos::dadosAlterados,
+            this,
+            [this]() {
+                m_modeloSecoes->definirNomesRevestimentosDisponiveis(m_modeloRevestimentos->nomesDisponiveis());
+                calcularResultadosModelo();
                 atualizarPainelContextual();
             });
 
@@ -721,6 +816,7 @@ void MainWindow::popularArvoreModelo()
         iconePadrao("dados"));
 
     criarItemArvore(itemDados, "Se\u00E7\u00F5es transversais", "secoes", iconePadrao("secoes"));
+    criarItemArvore(itemDados, "Revestimentos", "revestimentos", iconePadrao("dados"));
     criarItemArvore(itemDados, "Canais", "canais", iconePadrao("canais"));
     criarItemArvore(itemDados, "Bacias", "bacias", iconePadrao("bacias"));
     criarItemArvore(itemDados, "Uso e ocupa\u00E7\u00E3o do solo", "uso_ocupacao_solo", iconePadrao("solo"));
@@ -764,6 +860,10 @@ void MainWindow::abrirAbaParaIndice(const QModelIndex& indice)
         garantirAbaBacias();
         statusBar()->showMessage("Aba de bacias aberta.", 3000);
     }
+    else if (tipo == "revestimentos") {
+        garantirAbaRevestimentos();
+        statusBar()->showMessage("Aba de revestimentos aberta.", 3000);
+    }
     else if (tipo == "uso_ocupacao_solo") {
         garantirAbaUsoOcupacaoSolo();
         statusBar()->showMessage("Aba de uso e ocupa\u00E7\u00E3o do solo aberta.", 3000);
@@ -801,6 +901,7 @@ void MainWindow::garantirAbaSecoesTransversais()
     QTableView* tabela = criarTabelaBase();
     tabela->setModel(m_modeloSecoes);
     tabela->setItemDelegateForColumn(ModeloTabelaSecoesTransversais::ColunaGeometria, m_delegadoGeometriaSecoes);
+    tabela->setItemDelegateForColumn(ModeloTabelaSecoesTransversais::ColunaRevestimento, m_delegadoRevestimentoSecoes);
     ajustarLarguraColunasTabela(tabela);
 
     QWidget* pagina = criarPaginaTabela(
@@ -889,6 +990,30 @@ void MainWindow::garantirAbaUsoOcupacaoSolo()
     const int indice = m_abasCentrais->addTab(pagina, iconePadrao("solo"), "Uso do solo");
     m_abasCentrais->setCurrentIndex(indice);
     m_tabelaPorChave.insert(kAbaUsoOcupacaoSolo, tabela);
+}
+
+void MainWindow::garantirAbaRevestimentos()
+{
+    const int indiceExistente = indiceAbaPorChave(kAbaRevestimentos);
+    if (indiceExistente >= 0) {
+        m_abasCentrais->setCurrentIndex(indiceExistente);
+        return;
+    }
+
+    QTableView* tabela = criarTabelaBase();
+    tabela->setModel(m_modeloRevestimentos);
+    ajustarLarguraColunasTabela(tabela);
+
+    QWidget* pagina = criarPaginaTabela(
+        kAbaRevestimentos,
+        "Revestimentos hidraulicos",
+        "Ajuste Manning, limites admissiveis e parametros complementares do catalogo de revestimentos.",
+        "Revestimentos",
+        tabela,
+        iconePadrao("dados"));
+    const int indice = m_abasCentrais->addTab(pagina, iconePadrao("dados"), "Revestimentos");
+    m_abasCentrais->setCurrentIndex(indice);
+    m_tabelaPorChave.insert(kAbaRevestimentos, tabela);
 }
 
 void MainWindow::garantirAbaResultadosCanais()
@@ -1276,6 +1401,18 @@ void MainWindow::atualizarPainelContextual()
         return;
     }
 
+    if (chave == kAbaRevestimentos) {
+        definirResumoContextual(
+            "Revestimentos",
+            "Cadastro dos parametros hidraulicos usados por seções e verificacoes de resultados.",
+            {
+                QString("Revestimentos cadastrados: %1").arg(m_modeloRevestimentos ? m_modeloRevestimentos->rowCount() : 0),
+                "Ajuste Manning, velocidade maxima admissivel e tensao de cisalhamento maxima.",
+                "As secoes vinculadas passam a usar os novos parametros imediatamente."
+            });
+        return;
+    }
+
     if (chave == kAbaResultadosCanais
         || chave == kAbaResultadosCanaisDeclividadeMinima
         || chave == kAbaResultadosCanaisDeclividadeMaxima
@@ -1513,7 +1650,7 @@ void MainWindow::configurarAcoesProjeto()
 QJsonObject MainWindow::criarObjetoJsonProjeto() const
 {
     QJsonObject projeto;
-    projeto["versao"] = 1;
+    projeto["versao"] = 3;
 
     QJsonArray secoesJson;
     for (const RegistroSecaoTransversal& registro : m_modeloSecoes->registros()) {
@@ -1523,9 +1660,24 @@ QJsonObject MainWindow::criarObjetoJsonProjeto() const
         item["b_menor_m"] = registro.baseMenorM;
         item["talude"] = registro.talude;
         item["diametro_m"] = registro.diametroM;
+        item["altura_maxima_m"] = registro.alturaMaximaM;
+        item["folga_minima_m"] = registro.folgaMinimaM;
+        item["revestimento_nome"] = registro.revestimento;
         secoesJson.append(item);
     }
     projeto["secoes"] = secoesJson;
+
+    QJsonArray revestimentosJson;
+    for (const RevestimentoCanal& revestimento : m_modeloRevestimentos->revestimentos()) {
+        QJsonObject item;
+        item["nome"] = revestimento.nome();
+        item["coeficiente_manning"] = revestimento.coeficienteManning();
+        item["velocidade_maxima_admissivel_mps"] = revestimento.velocidadeMaximaAdmissivelMps();
+        item["tensao_cisalhamento_maxima_admissivel_pa"] = revestimento.tensaoCisalhamentoMaximaAdmissivelPa();
+        item["espessura_m"] = revestimento.espessura();
+        revestimentosJson.append(item);
+    }
+    projeto["revestimentos"] = revestimentosJson;
 
     QJsonArray usosSoloJson;
     for (const TipoUsoOcupacaoSolo& tipo : m_modeloUsoOcupacaoSolo->tiposUsoOcupacao()) {
@@ -1593,6 +1745,7 @@ bool MainWindow::aplicarObjetoJsonProjeto(const QJsonObject& objetoProjeto)
     }
 
     const QJsonArray secoesJson = objetoProjeto.value("secoes").toArray();
+    const QJsonArray revestimentosJson = objetoProjeto.value("revestimentos").toArray();
     const QJsonArray usosSoloJson = objetoProjeto.value("usos_ocupacao_solo").toArray();
     const QJsonArray canaisJson = objetoProjeto.value("canais").toArray();
     const QJsonArray baciasJson = objetoProjeto.value("bacias").toArray();
@@ -1607,6 +1760,18 @@ bool MainWindow::aplicarObjetoJsonProjeto(const QJsonObject& objetoProjeto)
         registro.baseMenorM = item.value("b_menor_m").toString().trimmed();
         registro.talude = item.value("talude").toString().trimmed();
         registro.diametroM = item.value("diametro_m").toString().trimmed();
+        registro.alturaMaximaM = item.contains("altura_maxima_m")
+                                     ? item.value("altura_maxima_m").toVariant().toString().trimmed()
+                                     : QString();
+        registro.folgaMinimaM = item.contains("folga_minima_m")
+                                    ? item.value("folga_minima_m").toVariant().toString().trimmed()
+                                    : QString("0.10");
+        registro.revestimento = item.value("revestimento_nome").toString().trimmed();
+        if (registro.revestimento.isEmpty()) {
+            registro.revestimento = registro.geometria.compare("Semicircular", Qt::CaseInsensitive) == 0
+                                        ? QString("Concreto")
+                                        : QString("Grama");
+        }
         if (registro.nomenclatura.isEmpty()) continue;
         secoes.append(registro);
     }
@@ -1628,6 +1793,22 @@ bool MainWindow::aplicarObjetoJsonProjeto(const QJsonObject& objetoProjeto)
         tipo.setFatorP(item.value("fator_p").toDouble());
         tipo.setDensidadeKgM3(item.value("densidade_kg_m3").toDouble());
         tiposUsoOcupacao.append(tipo);
+    }
+
+    QVector<RevestimentoCanal> revestimentos;
+    revestimentos.reserve(revestimentosJson.size());
+    for (const QJsonValue& valor : revestimentosJson) {
+        const QJsonObject item = valor.toObject();
+        const QString nome = item.value("nome").toString().trimmed();
+        if (nome.isEmpty()) continue;
+
+        RevestimentoCanal revestimento(
+            nome,
+            item.value("coeficiente_manning").toDouble(),
+            item.value("velocidade_maxima_admissivel_mps").toDouble(),
+            item.value("tensao_cisalhamento_maxima_admissivel_pa").toDouble());
+        revestimento.setEspessura(item.value("espessura_m").toDouble());
+        revestimentos.append(revestimento);
     }
 
     QVector<Canal> canais;
@@ -1679,6 +1860,10 @@ bool MainWindow::aplicarObjetoJsonProjeto(const QJsonObject& objetoProjeto)
     }
 
     m_modeloSecoes->definirRegistros(secoes);
+    if (!revestimentos.isEmpty()) {
+        m_modeloRevestimentos->definirRevestimentos(revestimentos);
+    }
+    m_modeloSecoes->definirNomesRevestimentosDisponiveis(m_modeloRevestimentos->nomesDisponiveis());
     if (!tiposUsoOcupacao.isEmpty()) {
         m_modeloUsoOcupacaoSolo->definirTiposUsoOcupacao(tiposUsoOcupacao);
     }
@@ -2172,11 +2357,11 @@ void MainWindow::atualizarModeloResultadosCanais()
     m_modeloResultadosCanais->clear();
     m_modeloResultadosCanais->setHorizontalHeaderLabels(
         { "ID", "A_total (m\u00B2)", "L_talvegue_total (m)", "S_talvegue_total (%)", "Cmed", "Tc_Atotal (Kirpich-modificado)",
-          "I_Atotal_TR (mm/h)", "Qp (dimensionamento)", "Se\u00E7\u00E3o",
+          "I_Atotal_TR (mm/h)", "Qp (dimensionamento)", "Se\u00E7\u00E3o", "Folga crit. (m)", "Revestimento", "Vmax rev. (m/s)",
           "Hn_Sp(min)", "T_Sp(min)", "Pm_Sp(min)", "Am_Sp(min)", "Rh_Sp(min)", "Ph_Sp(min)", "Folga_Sp(min)", "V_Sp(min)", "A(%)_Sp(min)", "Fr_V_Sp(min)", "tau_o_min",
           "Hn_Sp(max)", "T_Sp(max)", "Pm_Sp(max)", "Am_Sp(max)", "Rh_Sp(max)", "Ph_Sp(max)", "Folga_Sp(max)", "V_Sp(max)", "A(%)_Sp(max)", "Fr_V_Sp(max)", "tau_o_max",
           "Hn_Sp(final)", "V_Sp(final)", "tau_o_final",
-          "Crit_Qp_Smin", "Crit_Qp_Smax", "Crit_Altura_Smin", "Crit_V_Smax", "Crit_Geral" });
+          "Crit_Capacidade", "Crit_Folga", "Crit_Velocidade", "Crit_Geral" });
 
     const QVector<Canal>& canais = m_modeloCanais->canais();
     for (int linha = 0; linha < canais.size(); ++linha) {
@@ -2198,10 +2383,12 @@ void MainWindow::atualizarModeloResultadosCanais()
 
         const double sTalvegueTotalPercentual = std::max(0.0, declividadeTalvegueCritica) * 100.0;
 
+        const double folgaMinimaSecaoM = folgaMinimaSecaoPorId(idSecao, m_modeloSecoes);
+        const RevestimentoCanal revestimentoSecao = revestimentoSecaoPorId(idSecao, m_modeloSecoes, m_modeloRevestimentos);
         const double alturaMaxSecaoM = std::max(1e-6, alturaMaximaSecaoPorId(idSecao, m_modeloSecoes));
 
         Canal canalMin = canal;
-        aplicarSecaoTransversalNoCanal(&canalMin, idSecao, m_modeloSecoes);
+        aplicarSecaoTransversalNoCanal(&canalMin, idSecao, m_modeloSecoes, m_modeloRevestimentos);
         canalMin.setDeclividadeFinal(canal.declividadeMinima());
         const double hMin = canalMin.alturaLaminaParaVazaoProjeto(qDimensionamento);
         const double tMin = canalMin.larguraSuperficial(hMin);
@@ -2215,7 +2402,7 @@ void MainWindow::atualizarModeloResultadosCanais()
         const double tauMin = calcularTensaoCisalhantePa(rhMin, std::max(0.0, canal.declividadeMinima()));
 
         Canal canalMax = canal;
-        aplicarSecaoTransversalNoCanal(&canalMax, idSecao, m_modeloSecoes);
+        aplicarSecaoTransversalNoCanal(&canalMax, idSecao, m_modeloSecoes, m_modeloRevestimentos);
         canalMax.setDeclividadeFinal(canal.declividadeMaxima());
         const double hMax = canalMax.alturaLaminaParaVazaoProjeto(qDimensionamento);
         const double tMax = canalMax.larguraSuperficial(hMax);
@@ -2229,7 +2416,7 @@ void MainWindow::atualizarModeloResultadosCanais()
         const double tauMax = calcularTensaoCisalhantePa(rhMax, std::max(0.0, canal.declividadeMaxima()));
 
         Canal canalFinal = canal;
-        aplicarSecaoTransversalNoCanal(&canalFinal, idSecao, m_modeloSecoes);
+        aplicarSecaoTransversalNoCanal(&canalFinal, idSecao, m_modeloSecoes, m_modeloRevestimentos);
         canalFinal.setDeclividadeFinal(canal.declividadeFinal());
         const double hFinal = canalFinal.alturaLaminaParaVazaoProjeto(qDimensionamento);
         const double vFinal = canalFinal.velocidadeManning(hFinal);
@@ -2237,16 +2424,15 @@ void MainWindow::atualizarModeloResultadosCanais()
         const double tauFinal = calcularTensaoCisalhantePa(rhFinal, std::max(0.0, canal.declividadeFinal()));
 
         // Critérios de verificação hidráulica do canal.
-        constexpr double kVelocidadeMaximaAdmissivelMps = 5.0;
         EntradaVerificacaoCanal entradaVerificacao;
         entradaVerificacao.qpHidrologiaM3s = qDimensionamento;
-        entradaVerificacao.qpHidraulicaSMinM3s = canalMin.vazaoManning(std::max(0.0, hMin));
         entradaVerificacao.qpHidraulicaSMaxM3s = canalMax.vazaoManning(std::max(0.0, hMax));
         entradaVerificacao.alturaSMinM = std::max(0.0, hMin);
         entradaVerificacao.alturaMaximaSecaoM = alturaMaxSecaoM;
-        entradaVerificacao.folgaMinimaM = folgaMin;
+        entradaVerificacao.folgaMinimaM = folgaMinimaSecaoM;
+        entradaVerificacao.folgaDisponivelSMinM = folgaMin;
         entradaVerificacao.velocidadeSMaxMps = std::max(0.0, vMax);
-        entradaVerificacao.velocidadeMaximaAdmissivelMps = kVelocidadeMaximaAdmissivelMps;
+        entradaVerificacao.velocidadeMaximaAdmissivelMps = revestimentoSecao.velocidadeMaximaAdmissivelMps();
 
         const ResultadoVerificacaoCanal resultadoVerificacao = CalculoHidraulicoCanal::verificarCriterios(entradaVerificacao);
 
@@ -2266,6 +2452,9 @@ void MainWindow::atualizarModeloResultadosCanais()
                    << new QStandardItem(textoNumero(intensidadeMmH, 2))
                    << new QStandardItem(textoNumero(qDimensionamento, 3))
                    << new QStandardItem(idSecao)
+                   << new QStandardItem(textoNumero(folgaMinimaSecaoM, 3))
+                   << new QStandardItem(revestimentoSecao.nome())
+                   << new QStandardItem(textoNumero(revestimentoSecao.velocidadeMaximaAdmissivelMps(), 3))
                    << new QStandardItem(textoNumero(hMin, 3))
                    << new QStandardItem(textoNumero(tMin, 3))
                    << new QStandardItem(textoNumero(pMin, 3))
@@ -2291,15 +2480,12 @@ void MainWindow::atualizarModeloResultadosCanais()
                    << new QStandardItem(textoNumero(hFinal, 3))
                    << new QStandardItem(textoNumero(vFinal, 3))
                    << new QStandardItem(textoNumero(tauFinal, 2))
-                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioQpSMin))
-                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioQpSMax))
-                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioAlturaSMin))
-                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioVelocidadeSMax))
+                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioCapacidadeVazao))
+                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioFolga))
+                   << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.criterioVelocidade))
                    << new QStandardItem(resultadoVerificacao.textoStatus(resultadoVerificacao.todosAtendidos()));
 
-        for (QStandardItem* item : itensLinha) {
-            item->setEditable(false);
-        }
+        aplicarEstiloLinhaResultado(itensLinha, resultadoVerificacao);
 
         m_modeloResultadosCanais->appendRow(itensLinha);
     }
